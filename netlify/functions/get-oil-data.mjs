@@ -17,10 +17,22 @@
 
 import { getStore } from '@netlify/blobs';
 
+// REPLACE WITH:
 function getBlobKey(url) {
-  const u = new URL(url);
-  const type = u.searchParams.get('type') || 'latest';
-  return ['latest','prices','news','eia','meta'].includes(type) ? type : 'latest';
+  // Check query param first (direct function calls)
+  try {
+    const u = new URL(url);
+    const type = u.searchParams.get('type');
+    if (type && ['latest','prices','news','eia','tankers','meta'].includes(type)) return type;
+  } catch (_) {}
+
+  // Fall back to path-based detection (Netlify redirects strip query params)
+  if (url.includes('/oil-prices'))  return 'prices';
+  if (url.includes('/oil-news'))    return 'news';
+  if (url.includes('/oil-eia'))     return 'eia';
+  if (url.includes('/oil-tankers')) return 'tankers';
+  if (url.includes('/oil-meta'))    return 'meta';
+  return 'latest';
 }
 
 function jsonResponse(body, status = 200, extraHeaders = {}) {
