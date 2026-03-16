@@ -45,22 +45,27 @@ const EIA_SERIES = [
   { id: 'PET.WDISTUS1.W',         key: 'us_distillate',       freq: 'weekly',  length: 52  },
   { id: 'PET.WCRRIUS2.W',         key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
   { id: 'PET.MCRFPUS2.M',         key: 'us_field_production', freq: 'monthly', length: 60  },
-  { id: 'PET.PAPR_OPEC_M.M',      key: 'opec_production',     freq: 'monthly', length: 60  },
-  { id: 'PET.PAPR_NON_OPEC_M.M',  key: 'non_opec_production', freq: 'monthly', length: 60  },
   { id: 'PET.RWTC.M',             key: 'wti_spot_monthly',    freq: 'monthly', length: 60  },
   { id: 'PET.RBRTE.M',            key: 'brent_spot_monthly',  freq: 'monthly', length: 60  },
   { id: 'NG.RNGWHHD.D',           key: 'henry_hub_daily',     freq: 'daily',   length: 90  },
 ];
 
 // ── RSS FEEDS ─────────────────────────────────────────────────
+// REPLACE WITH:
 const RSS_FEEDS = [
-  { url: 'https://www.opec.org/opec_web/en/press_room/rss.xml',  source: 'OPEC',          tag: 'OPEC'    },
-  { url: 'https://www.iea.org/rss/news.xml',                      source: 'IEA',           tag: 'IEA'     },
-  { url: 'https://oilprice.com/rss/main',                         source: 'OilPrice.com',  tag: 'MARKET'  },
-  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx',  source: 'Rigzone',       tag: 'SUPPLY'  },
-  { url: 'https://feeds.feedburner.com/platts/LnJO',             source: 'S&P Platts',    tag: 'PRICE'   },
-  { url: 'https://www.naturalgasintel.com/feed/',                 source: 'NGI',           tag: 'LNG'     },
-  { url: 'https://www.offshore-technology.com/feed/',             source: 'Offshore Tech', tag: 'SUPPLY'  },
+  // OPEC — returns 0 articles (their RSS is often empty), keep but note
+  { url: 'https://www.opec.org/opec_web/en/press_room/rss.xml',          source: 'OPEC',          tag: 'OPEC'    },
+  // IEA blocks server requests (403) — replaced with their press releases page RSS
+  { url: 'https://www.iea.org/news/rss',                                   source: 'IEA',           tag: 'IEA'     },
+  { url: 'https://oilprice.com/rss/main',                                  source: 'OilPrice.com',  tag: 'MARKET'  },
+  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx',           source: 'Rigzone',       tag: 'SUPPLY'  },
+  // Platts Feedburner dead — replaced with direct OilPrice energy feed
+  { url: 'https://oilprice.com/rss/energy',                                source: 'OilPrice Energy', tag: 'PRICE' },
+  { url: 'https://www.naturalgasintel.com/feed/',                          source: 'NGI',           tag: 'LNG'     },
+  { url: 'https://www.offshore-technology.com/feed/',                      source: 'Offshore Tech', tag: 'SUPPLY'  },
+  // Additional reliable sources
+  { url: 'https://www.worldoil.com/rss/news',                              source: 'World Oil',     tag: 'SUPPLY'  },
+  { url: 'https://www.hartenergy.com/rss/news',                            source: 'Hart Energy',   tag: 'MARKET'  },
 ];
 
 // ── TANKERS ───────────────────────────────────────────────────
@@ -86,7 +91,15 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'Accept': 'application/json', ...headers },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // REPLACE WITH:
+      if (!res.ok) {
+        // Don't retry 404s — the resource doesn't exist
+        if (res.status === 404) {
+          console.warn(`[fetchJSON] 404 (no retry): ${url.slice(0, 90)}`);
+          return null;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       return await res.json();
     } catch (e) {
       console.warn(`[fetchJSON] attempt ${attempt}/${retries}: ${url.slice(0, 90)} → ${e.message}`);
