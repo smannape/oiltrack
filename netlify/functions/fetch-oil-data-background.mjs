@@ -78,18 +78,25 @@ const TRACKED_TANKERS = [
 // ══════════════════════════════════════════════════════════════
 // HTTP HELPERS
 // ══════════════════════════════════════════════════════════════
-async function fetchJSON(url, timeoutMs = 20000, headers = {}) {
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { 'Accept': 'application/json', ...headers },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (e) {
-    console.warn(`[fetchJSON] ${url.slice(0, 90)} → ${e.message}`);
-    return null;
+// REPLACE WITH:
+async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { 'Accept': 'application/json', ...headers },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      console.warn(`[fetchJSON] attempt ${attempt}/${retries}: ${url.slice(0, 90)} → ${e.message}`);
+      if (attempt < retries) {
+        // Wait before retry: 2s, 4s, 8s
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
   }
+  return null;
 }
 
 async function fetchText(url, timeoutMs = 15000) {
