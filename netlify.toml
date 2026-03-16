@@ -16,6 +16,8 @@
   schedule = "0 * * * *"
 
 # ── API REDIRECTS ─────────────────────────────────────────────
+# FIND and REPLACE the entire redirects section:
+
 [[redirects]]
   from   = "/api/oil-data"
   to     = "/.netlify/functions/get-oil-data"
@@ -28,22 +30,27 @@
 
 [[redirects]]
   from   = "/api/oil-prices"
-  to     = "/.netlify/functions/get-oil-data?type=prices"
+  to     = "/.netlify/functions/get-oil-data"
   status = 200
 
 [[redirects]]
   from   = "/api/oil-news"
-  to     = "/.netlify/functions/get-oil-data?type=news"
+  to     = "/.netlify/functions/get-oil-data"
   status = 200
 
 [[redirects]]
   from   = "/api/oil-eia"
-  to     = "/.netlify/functions/get-oil-data?type=eia"
+  to     = "/.netlify/functions/get-oil-data"
   status = 200
 
 [[redirects]]
   from   = "/api/oil-meta"
-  to     = "/.netlify/functions/get-oil-data?type=meta"
+  to     = "/.netlify/functions/get-oil-data"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-tankers"
+  to     = "/.netlify/functions/get-oil-data"
   status = 200
 
 [[redirects]]
@@ -51,17 +58,6 @@
   to     = "/.netlify/functions/get-oil-data"
   status = 200
   force  = true
-
-[[redirects]]
-  from   = "/api/oil-telegram"
-  to     = "/.netlify/functions/get-telegram-data"
-  status = 200
-
-[[redirects]]
-  from   = "/api/telegram-register"
-  to     = "/.netlify/functions/get-telegram-data"
-  status = 200
-
 # Telegram Bot API pushes directly to this URL
 [[redirects]]
   from   = "/.netlify/functions/telegram-webhook"
