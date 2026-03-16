@@ -33,9 +33,18 @@ window.CrudeAPI = (function () {
 
   // ── BLOB FETCHERS ──────────────────────────────────────────
 
-  async function fetchCachedPrices()  { return getBlob('/api/oil-prices');  }
-  async function fetchCachedNews()    { return getBlob('/api/oil-news');    }
-  async function fetchCachedEIA()     { return getBlob('/api/oil-eia');     }
+  async function fetchCachedPrices() {
+    const data = await getBlob('/api/oil-prices');
+    if (data) {
+      const keys = Object.keys(data.prices || {});
+      console.log(`[CrudeAPI] prices blob: ${keys.length} contracts — ${keys.join(', ')}`);
+      const wti = data.prices?.wti?.latest?.price;
+      console.log(`[CrudeAPI] WTI from blob: $${wti}`);
+    }
+    return data;
+  }
+  async function fetchCachedNews()  { return getBlob('/api/oil-news');  }
+  async function fetchCachedEIA()   { return getBlob('/api/oil-eia');   }
   async function fetchMeta()          { return getBlob('/api/oil-meta');    }
 
   async function fetchCachedTankers() {
