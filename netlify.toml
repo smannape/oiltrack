@@ -1,0 +1,106 @@
+# ============================================================
+# CRUDE RADAR — netlify.toml (Pro Plan)
+# ============================================================
+
+[build]
+  publish   = "."
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# ── SCHEDULED FUNCTION ───────────────────────────────────────
+# Fires every hour. Kicks off background function which does
+# the actual heavy data fetch (up to 15 min on Pro).
+[functions."scheduled-refresh"]
+  schedule = "0 * * * *"
+
+# ── API REDIRECTS ─────────────────────────────────────────────
+[[redirects]]
+  from   = "/api/oil-data"
+  to     = "/.netlify/functions/get-oil-data"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-data"
+  to     = "/.netlify/functions/get-oil-data"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-prices"
+  to     = "/.netlify/functions/get-oil-data?type=prices"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-news"
+  to     = "/.netlify/functions/get-oil-data?type=news"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-eia"
+  to     = "/.netlify/functions/get-oil-data?type=eia"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-meta"
+  to     = "/.netlify/functions/get-oil-data?type=meta"
+  status = 200
+
+[[redirects]]
+  from   = "/api/oil-refresh"
+  to     = "/.netlify/functions/get-oil-data"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/oil-telegram"
+  to     = "/.netlify/functions/get-telegram-data"
+  status = 200
+
+[[redirects]]
+  from   = "/api/telegram-register"
+  to     = "/.netlify/functions/get-telegram-data"
+  status = 200
+
+# Telegram Bot API pushes directly to this URL
+[[redirects]]
+  from   = "/.netlify/functions/telegram-webhook"
+  to     = "/.netlify/functions/telegram-webhook"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ── SECURITY HEADERS ─────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options           = "DENY"
+    X-Content-Type-Options    = "nosniff"
+    X-XSS-Protection          = "1; mode=block"
+    Referrer-Policy           = "strict-origin-when-cross-origin"
+    Permissions-Policy        = "geolocation=(), microphone=(), camera=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+
+# ── ASSET CACHING ────────────────────────────────────────────
+[[headers]]
+  for = "/js/*.js"
+  [headers.values]
+    Cache-Control             = "public, max-age=3600, stale-while-revalidate=86400"
+    Netlify-CDN-Cache-Control = "public, max-age=3600, stale-while-revalidate=86400, durable"
+
+[[headers]]
+  for = "/css/*.css"
+  [headers.values]
+    Cache-Control             = "public, max-age=3600, stale-while-revalidate=86400"
+    Netlify-CDN-Cache-Control = "public, max-age=3600, stale-while-revalidate=86400, durable"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin  = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"

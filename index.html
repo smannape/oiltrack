@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRUDE RADAR — Live Oil Market Intelligence</title>
+  <meta name="description" content="Real-time global oil market intelligence: prices, tankers, production, consumption, news.">
+  <link rel="stylesheet" href="css/main.css">
+  <!-- Chart.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <!-- Leaflet.js (free open-source map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <style>
+    /* Inline map SVG styles */
+    .map-country { fill: #111520; stroke: #1e2d45; stroke-width: 0.5; transition: fill 0.3s; cursor: pointer; }
+    .map-country:hover { fill: #1a2133; stroke: #2a4060; }
+    .map-country.prod-high { fill: rgba(255,107,0,0.55); }
+    .map-country.prod-med { fill: rgba(255,179,0,0.45); }
+    .map-country.prod-low { fill: rgba(0,176,255,0.35); }
+    .map-country.cons-high { fill: rgba(255,23,68,0.55); }
+    .map-country.cons-med { fill: rgba(255,107,0,0.45); }
+    .tanker-dot { fill: #00e676; stroke: #000; stroke-width: 0.5; cursor: pointer; animation: pulse-dot 2s infinite; }
+    .tanker-dot.anchored { fill: #ffb300; }
+    .tanker-dot.moored { fill: #00b0ff; }
+    /* ── Telegram Feed Panel ── */
+    .tg-feed-panel { background:var(--bg-panel);border:1px solid var(--border);border-radius:4px;margin-bottom:10px;overflow:hidden; }
+    .tg-feed-header { display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);background:rgba(0,176,255,0.04); }
+    .tg-feed-title { font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:2px;color:#00b0ff;text-transform:uppercase; }
+    .tg-badge { display:inline-flex;align-items:center;gap:5px;background:rgba(0,176,255,0.1);border:1px solid rgba(0,176,255,0.25);color:#00b0ff;font-family:var(--font-mono);font-size:9px;letter-spacing:1px;padding:2px 7px;border-radius:2px;text-transform:uppercase; }
+    .tg-badge::before { content:'●';animation:pulse 1.5s infinite;font-size:8px; }
+    .tg-item { padding:10px 12px;border-bottom:1px solid rgba(30,45,69,0.4);cursor:pointer;transition:background 0.15s; }
+    .tg-item:last-child { border-bottom:none; }
+    .tg-item:hover { background:var(--bg-hover); }
+    .tg-item-header { display:flex;align-items:center;gap:6px;margin-bottom:4px; }
+    .tg-channel { font-family:var(--font-mono);font-size:9px;color:#00b0ff;letter-spacing:1px;text-transform:uppercase; }
+    .tg-time { font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-left:auto; }
+    .tg-text { font-family:var(--font-ui);font-size:12px;color:var(--text-primary);line-height:1.5; }
+    .tg-tag { display:inline-block;background:rgba(0,176,255,0.1);border:1px solid rgba(0,176,255,0.2);color:#00b0ff;font-family:var(--font-mono);font-size:9px;letter-spacing:1px;padding:1px 5px;border-radius:2px;text-transform:uppercase; }
+    .tg-tag.critical { background:rgba(255,23,68,0.15);border-color:rgba(255,23,68,0.3);color:var(--accent-red); }
+    .tg-setup-notice { padding:14px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-align:center;line-height:1.8; }
+    .tg-setup-notice a { color:#00b0ff;text-decoration:none; }
+    .tg-setup-notice a:hover { text-decoration:underline; }
+    .tg-count { font-family:var(--font-mono);font-size:9px;color:var(--text-dim);letter-spacing:1px; }
+
+    /* Leaflet overrides */
+    #leaflet-map { width:100%; height:500px; background:#060a10; border-radius:4px; }
+    .leaflet-container { background:#060a10 !important; font-family:'Share Tech Mono',monospace; }
+    .leaflet-popup-content-wrapper { background:transparent !important; border:none !important; box-shadow:none !important; padding:0 !important; }
+    .leaflet-popup-content { margin:0 !important; }
+    .leaflet-popup-tip-container { display:none !important; }
+    .crude-popup .leaflet-popup-content-wrapper { background:transparent; border:none; box-shadow:none; }
+    .leaflet-control-zoom { border:1px solid #1e2d45 !important; }
+    .leaflet-control-zoom a { background:#111520 !important; color:#ff6b00 !important; border-color:#1e2d45 !important; font-family:'Orbitron',monospace !important; }
+    .leaflet-control-zoom a:hover { background:#1a2133 !important; }
+  </style>
+</head>
+<body>
+
+<!-- ===== BREAKING NEWS TICKER ===== -->
+<div id="breaking-ticker">
+  <div class="ticker-label">⚡ BREAKING</div>
+  <div style="overflow:hidden;flex:1">
+    <div class="ticker-track" id="ticker-track"></div>
+  </div>
+</div>
+
+<!-- ===== HEADER ===== -->
+<header id="main-header">
+  <a href="#" class="logo" data-page="dashboard">
+    <div class="logo-icon">🛢</div>
+    <div>
+      <span class="logo-text">CRUDE RADAR</span>
+      <span class="logo-sub">LIVE OIL MARKET INTELLIGENCE</span>
+    </div>
+  </a>
+
+  <nav>
+    <a href="#" data-page="dashboard" class="active">Dashboard</a>
+    <a href="#" data-page="tankers">Tankers</a>
+    <a href="#" data-page="charts">Charts</a>
+    <a href="#" data-page="stats">Statistics</a>
+    <a href="#" data-page="news">News</a>
+    <a href="#" onclick="toggleApiConfig(event)" style="color:var(--accent-amber)">⚙ API Keys</a>
+  </nav>
+
+  <div class="header-right">
+    <div id="live-clock">00:00:00 UTC</div>
+    <span class="live-badge">LIVE</span>
+    <div id="user-area">
+      <button id="login-btn">Login</button>
+      <button id="signup-btn">Sign Up</button>
+    </div>
+    <div id="user-profile">
+      <div id="user-avatar">–</div>
+      <span id="username-display">–</span>
+    </div>
+  </div>
+</header>
+
+<!-- ===== MODAL ===== -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <button class="modal-close-x" id="modal-close-btn">✕</button>
+
+    <div id="form-login">
+      <div class="modal-title">Login</div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="login-email" type="email" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="login-pass" type="password" placeholder="••••••••">
+      </div>
+      <button class="btn-primary" id="do-login">Access Terminal</button>
+      <div class="modal-switch">No account? <a id="switch-to-signup">Sign up</a></div>
+    </div>
+
+    <div id="form-signup" style="display:none">
+      <div class="modal-title">Create Account</div>
+      <div class="form-group">
+        <label class="form-label">Name / Handle</label>
+        <input class="form-input" id="signup-name" type="text" placeholder="OilTrader_KW">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="signup-email" type="email" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="signup-pass" type="password" placeholder="••••••••">
+      </div>
+      <button class="btn-primary" id="do-signup">Join Crude Radar</button>
+      <div class="modal-switch">Have an account? <a id="switch-to-login">Login</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== API CONFIG PANEL ===== -->
+<div id="api-config-panel" style="display:none;position:fixed;top:84px;right:0;width:340px;background:var(--bg-panel);border:1px solid var(--border);border-right:none;border-top:none;z-index:800;padding:16px 18px;max-height:calc(100vh - 84px);overflow-y:auto">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="font-family:var(--font-display);font-size:10px;letter-spacing:2px;color:var(--accent-orange)">API CONFIGURATION</span>
+    <button onclick="document.getElementById('api-config-panel').style.display='none'" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px">✕</button>
+  </div>
+  <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+    Enter your free API keys below to enable live data. All keys are stored only in your browser (localStorage).
+  </div>
+
+  <div style="margin-bottom:12px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">ALPHA VANTAGE <span style="color:var(--text-dim)">(Oil prices · Free at alphavantage.co)</span></div>
+    <input id="cfg-av-key" type="text" placeholder="Enter Alpha Vantage API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
+  </div>
+
+  <div style="margin-bottom:12px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">EIA OPEN DATA <span style="color:var(--text-dim)">(Inventory · Free at eia.gov/opendata)</span></div>
+    <input id="cfg-eia-key" type="text" placeholder="Enter EIA API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
+  </div>
+
+  <div style="margin-bottom:12px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">GNEWS <span style="color:var(--text-dim)">(News · Free at gnews.io)</span></div>
+    <input id="cfg-gnews-key" type="text" placeholder="Enter GNews API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
+  </div>
+
+  <div style="margin-bottom:16px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">NEWSAPI <span style="color:var(--text-dim)">(News backup · Free at newsapi.org · dev only)</span></div>
+    <input id="cfg-newsapi-key" type="text" placeholder="Enter NewsAPI key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
+  </div>
+
+  <button onclick="saveApiKeys()" style="width:100%;background:var(--accent-orange);border:none;color:#000;font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:2px;padding:10px;border-radius:3px;cursor:pointer;text-transform:uppercase">SAVE & RELOAD DATA</button>
+
+  <div style="margin-top:12px;padding:10px;background:rgba(0,176,255,0.08);border:1px solid rgba(0,176,255,0.2);border-radius:3px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-blue);letter-spacing:1px;margin-bottom:4px">NOTE: ALWAYS FREE</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);line-height:1.5">
+      • Map: CARTO + OpenStreetMap (no key)<br>
+      • FX rates: open.er-api.com (no key)<br>
+      • News RSS: rss2json.com (no key)<br>
+      • Weather: Open-Meteo (no key)
+    </div>
+  </div>
+</div>
+
+<!-- =================== PAGES =================== -->
+
+<!-- ===== PAGE: DASHBOARD ===== -->
+<div id="page-dashboard" class="page active">
+  <div id="layout-main">
+    <div id="content-area">
+
+      <!-- Price Grid -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Oil Contract Prices — Live Feed</span>
+          <span class="live-badge">REAL-TIME</span>
+        </div>
+        <div class="price-grid" id="price-grid"></div>
+      </div>
+
+      <!-- World Map -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Global Oil Map</span>
+          <div class="map-controls">
+            <button class="map-btn active" data-mode="production">Production</button>
+            <button class="map-btn" data-mode="consumption">Consumption</button>
+            <button class="map-btn" data-mode="tankers">Tankers</button>
+          </div>
+        </div>
+        <div id="map-container" style="padding:0;position:relative">
+          <div id="leaflet-map"></div>
+
+          <!-- Map Legend -->
+          <div class="map-legend" id="map-legend" style="position:absolute;bottom:20px;left:20px;z-index:1000">
+            <div class="map-legend-title" id="map-legend-title">PRODUCTION (Mb/d)</div>
+            <div id="map-legend-items">
+              <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff6b00"></div>>10 Mb/d</div>
+              <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>5–10 Mb/d</div>
+              <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>1–5 Mb/d</div>
+              <div class="map-legend-item"><div class="map-legend-dot" style="background:#2a4060"></div>&lt;1 Mb/d</div>
+            </div>
+          </div>
+
+          <!-- Tanker legend -->
+          <div style="position:absolute;bottom:20px;right:20px;z-index:1000;background:rgba(10,12,15,0.9);border:1px solid var(--border);border-radius:3px;padding:8px 12px;font-family:var(--font-mono);font-size:10px;">
+            <div style="color:var(--accent-orange);letter-spacing:1px;margin-bottom:6px;font-size:9px;text-transform:uppercase">ACTIVE TANKERS</div>
+            <div class="map-legend-item"><div class="map-legend-dot" style="background:#00e676;box-shadow:0 0 5px #00e67680"></div>Underway</div>
+            <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>Anchored</div>
+            <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>Moored</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Telegram Feed Panel -->
+      <div class="tg-feed-panel" id="telegram-panel">
+        <div class="tg-feed-header">
+          <span class="tg-feed-title">📡 Telegram Intelligence Feed</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="tg-count" id="tg-msg-count">0 messages</span>
+            <span class="tg-badge" id="tg-status-badge">CONNECTING</span>
+          </div>
+        </div>
+        <div id="telegram-feed-body">
+          <div class="tg-setup-notice" id="tg-setup-notice">
+            <div style="font-size:20px;margin-bottom:8px">📡</div>
+            <div style="color:var(--text-primary);margin-bottom:6px">Telegram Feed Not Configured</div>
+            <div>Create a bot via <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, add <code style="color:#00b0ff">TELEGRAM_BOT_TOKEN</code> to Netlify env vars,</div>
+            <div>then visit <a href="/api/telegram-register" target="_blank">/api/telegram-register</a> to activate the webhook.</div>
+            <div style="margin-top:8px;color:var(--text-dim)">See <strong style="color:var(--text-primary)">NETLIFY_PRO_SETUP.md</strong> for full instructions.</div>
+          </div>
+          <div id="tg-messages-list" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- Production Table -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Oil Production by Country</span>
+          <span class="panel-meta">Mb/d · 2025 Est.</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Country</th>
+                <th>Production (Mb/d)</th>
+                <th>Consumption (Mb/d)</th>
+                <th>Net Balance</th>
+                <th>World Share</th>
+                <th>Major Producer</th>
+              </tr>
+            </thead>
+            <tbody id="prod-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /content-area -->
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Market Status</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:3px;padding:8px;text-align:center">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">NYMEX</div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green);margin-top:3px">● OPEN</div>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:3px;padding:8px;text-align:center">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">ICE</div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green);margin-top:3px">● OPEN</div>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:3px;padding:8px;text-align:center">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">DME</div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--accent-amber);margin-top:3px">● AH</div>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:3px;padding:8px;text-align:center">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">OPEC</div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--accent-blue);margin-top:3px">● OTC</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">U.S. Crude Inventory (EIA)</div>
+        <div id="inventory-widget" style="padding:4px 0">
+          <div style="font-family:var(--font-display);font-size:22px;color:var(--text-bright)">432.1M</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:3px">▼ 3.2M bbl WoW</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">EIA · Loading live data…</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">FX Rates (USD Base)</div>
+        <div id="fx-rates">
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(30,45,69,0.4);font-family:var(--font-mono);font-size:11px"><span style="color:var(--text-dim)">EUR/USD</span><span style="color:var(--text-primary)">—</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(30,45,69,0.4);font-family:var(--font-mono);font-size:11px"><span style="color:var(--text-dim)">GBP/USD</span><span style="color:var(--text-primary)">—</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-family:var(--font-mono);font-size:11px"><span style="color:var(--text-dim)">CNY/USD</span><span style="color:var(--text-primary)">—</span></div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">Key Metrics</div>
+        <div style="font-family:var(--font-mono);font-size:11px">
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">Global Prod.</span>
+            <span style="color:var(--text-primary)">101.8 Mb/d</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">U.S. Prod. (EIA)</span>
+            <span style="color:var(--text-primary)" id="sidebar-us-prod">13.1 Mb/d</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">OPEC Prod. (EIA)</span>
+            <span style="color:var(--text-primary)" id="sidebar-opec-prod">26.4 Mb/d</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">Global Cons.</span>
+            <span style="color:var(--text-primary)">103.5 Mb/d</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">OPEC Output</span>
+            <span style="color:var(--text-primary)">26.4 Mb/d</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">WTI/Brent Spr.</span>
+            <span style="color:var(--accent-amber)">-$3.76</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <span style="color:var(--text-dim)">Active Tankers</span>
+            <span style="color:var(--text-primary)">4,218</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0">
+            <span style="color:var(--text-dim)">OPEC Quota</span>
+            <span style="color:var(--accent-green)">CUTTING</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">Latest News</div>
+        <div id="news-feed"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">Upcoming Events</div>
+        <div style="font-family:var(--font-mono);font-size:11px">
+          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 11 · EIA</div>
+            <div style="color:var(--text-primary);margin-top:2px">Weekly Crude Stocks Report</div>
+          </div>
+          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 12 · IEA</div>
+            <div style="color:var(--text-primary);margin-top:2px">Monthly Oil Market Report</div>
+          </div>
+          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
+            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 15 · OPEC</div>
+            <div style="color:var(--text-primary);margin-top:2px">Ministerial Meeting Vienna</div>
+          </div>
+          <div style="padding:6px 0">
+            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">OCT 01 · NYMEX</div>
+            <div style="color:var(--text-primary);margin-top:2px">WTI Nov Contract Expiry</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ===== PAGE: TANKERS ===== -->
+<div id="page-tankers" class="page">
+  <div style="padding:12px">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Global Tanker Tracking</span>
+        <span class="live-badge">AIS FEED</span>
+      </div>
+      <div style="padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--border)">
+        Tracking <span style="color:var(--accent-orange)">4,218</span> active crude oil tankers globally · 
+        VLCC: <span style="color:var(--text-primary)">842</span> · 
+        Suezmax: <span style="color:var(--text-primary)">605</span> · 
+        Aframax: <span style="color:var(--text-primary)">980</span> · 
+        Panamax: <span style="color:var(--text-primary)">1,791</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Vessel Name</th>
+              <th>Type / Flag</th>
+              <th>From</th>
+              <th>Destination</th>
+              <th>Position</th>
+              <th>Speed</th>
+              <th>Status</th>
+              <th>ETA</th>
+            </tr>
+          </thead>
+          <tbody id="tankers-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Route stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:0">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Middle East → Asia</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">1,842</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 142 week-over-week</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Middle East → Europe</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">680</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-red);margin-top:4px">▼ 23 week-over-week</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Americas → Europe</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">412</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 34 week-over-week</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Avg. VLCC Rate</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--accent-orange)">$48.2k</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 12.4% on week</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">per day / spot</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE: CHARTS ===== -->
+<div id="page-charts" class="page">
+  <div class="charts-grid">
+    <!-- WTI -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">🇺🇸 WTI Crude Oil</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-wti-price">$77.42</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green)" id="chart-wti-chg">▲ +0.74%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+          <button class="tf-btn">3M</button>
+          <button class="tf-btn">1Y</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-wti"></canvas></div>
+    </div>
+    <!-- BRENT -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">🌊 Brent Crude Oil</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)">$81.18</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green)">▲ +0.79%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+          <button class="tf-btn">3M</button>
+          <button class="tf-btn">1Y</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-brent"></canvas></div>
+    </div>
+    <!-- DUBAI -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">🇦🇪 Dubai Crude</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)">$79.60</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-red)">▼ -0.25%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+          <button class="tf-btn">3M</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-dubai"></canvas></div>
+    </div>
+    <!-- NATGAS -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">⚡ Natural Gas (NYMEX)</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)">$2.84</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green)">▲ +1.79%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+          <button class="tf-btn">3M</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-natgas"></canvas></div>
+    </div>
+    <!-- RBOB -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">⛽ RBOB Gasoline</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)">$2.31</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green)">▲ +1.32%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-rbob"></canvas></div>
+    </div>
+    <!-- HEATING OIL -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <span class="chart-card-title">🔥 Heating Oil</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)">$2.67</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent-green)">▲ +0.75%</span>
+        </div>
+        <div class="chart-timeframe">
+          <button class="tf-btn active">1W</button>
+          <button class="tf-btn">1M</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="chart-heatoil"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE: STATISTICS ===== -->
+<div id="page-stats" class="page">
+  <!-- KPI Row -->
+  <div class="stat-kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Global Production</div>
+      <div class="kpi-value">101.8</div>
+      <div class="kpi-sub">Million barrels/day</div>
+      <div class="kpi-change" style="color:var(--accent-green)">▲ +0.9% YoY</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Global Consumption</div>
+      <div class="kpi-value">103.5</div>
+      <div class="kpi-sub">Million barrels/day</div>
+      <div class="kpi-change" style="color:var(--accent-green)">▲ +1.0% YoY (IEA)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">OPEC Production</div>
+      <div class="kpi-value">26.4</div>
+      <div class="kpi-sub">Mb/d · 25.9% global share</div>
+      <div class="kpi-change" style="color:var(--accent-red)">▼ -0.8% (cuts active)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Proven Reserves</div>
+      <div class="kpi-value">1,733</div>
+      <div class="kpi-sub">Billion barrels (total)</div>
+      <div class="kpi-change" style="color:var(--text-dim)">OPEC: 71.6% share</div>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <!-- Prod vs Cons -->
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-header">
+        <span class="panel-title">Global Production vs Consumption (2019–2025)</span>
+        <span class="panel-meta">Source: IEA / BP Statistical Review / OPEC</span>
+      </div>
+      <div style="height:280px;padding:12px"><canvas id="chart-prod-vs-cons"></canvas></div>
+    </div>
+
+    <!-- OPEC Doughnut -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Production Share by Country</span>
+        <span class="panel-meta">2025 Estimate · Mb/d</span>
+      </div>
+      <div style="height:300px;padding:12px"><canvas id="chart-opec-share"></canvas></div>
+    </div>
+
+    <!-- Consumption bar -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Top 10 Consumers</span>
+        <span class="panel-meta">2025 · Mb/d</span>
+      </div>
+      <div style="height:300px;padding:12px"><canvas id="chart-consumption"></canvas></div>
+    </div>
+
+    <!-- OPEC Members table -->
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-header">
+        <span class="panel-title">OPEC+ Member Production Summary</span>
+        <span class="panel-meta">Latest available · August 2025</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Country</th>
+              <th>Quota (Mb/d)</th>
+              <th>Actual (Mb/d)</th>
+              <th>Compliance</th>
+              <th>Proven Reserves (Gb)</th>
+              <th>R/P Ratio (yrs)</th>
+              <th>Org.</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Saudi Arabia</td><td>9.8</td><td>10.5</td><td class="down">107%</td><td>265.9</td><td>69.5</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Russia</td><td>10.5</td><td>10.8</td><td class="down">103%</td><td>107.8</td><td>27.4</td><td><span class="tag">OPEC+</span></td></tr>
+            <tr><td>Iraq</td><td>4.2</td><td>4.6</td><td class="down">110%</td><td>145.0</td><td>86.3</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>UAE</td><td>3.0</td><td>4.1</td><td class="down">137%</td><td>97.8</td><td>65.2</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Kuwait</td><td>2.7</td><td>2.9</td><td class="down">107%</td><td>101.5</td><td>95.7</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Iran</td><td>—</td><td>3.4</td><td class="neutral">Exempt</td><td>208.6</td><td>168.1</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Kazakhstan</td><td>1.7</td><td>1.9</td><td class="down">112%</td><td>30.0</td><td>43.3</td><td><span class="tag">OPEC+</span></td></tr>
+            <tr><td>Nigeria</td><td>1.5</td><td>1.5</td><td class="up">100%</td><td>36.9</td><td>67.3</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Venezuela</td><td>0.8</td><td>0.9</td><td class="up">113%</td><td>303.8</td><td>924</td><td><span class="tag">OPEC</span></td></tr>
+            <tr><td>Libya</td><td>—</td><td>1.2</td><td class="neutral">Exempt</td><td>48.4</td><td>110.4</td><td><span class="tag">OPEC</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE: NEWS ===== -->
+<div id="page-news" class="page">
+  <div style="padding:12px;max-width:900px;margin:0 auto">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Oil & Gas News Feed</span>
+        <span class="live-badge">LIVE</span>
+      </div>
+      <div style="padding:10px 12px">
+        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="map-btn active">All</button>
+          <button class="map-btn">OPEC</button>
+          <button class="map-btn">Prices</button>
+          <button class="map-btn">Tankers</button>
+          <button class="map-btn">LNG</button>
+          <button class="map-btn">Shale</button>
+          <button class="map-btn">Refinery</button>
+        </div>
+        <!-- Expanded news list -->
+        <div id="news-full-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== STATUS BAR ===== -->
+<div id="status-bar">
+  <div class="status-item" id="api-status-telegram"><div class="status-dot warn"></div>TELEGRAM —</div>
+  <div class="status-item" id="api-status-prices"><div class="status-dot warn"></div>PRICES DEMO</div>
+  <div class="status-item" id="api-status-news"><div class="status-dot warn"></div>NEWS DEMO</div>
+  <div class="status-item" id="api-status-eia"><div class="status-dot warn"></div>EIA DEMO</div>
+  <div class="status-item"><div class="status-dot"></div>MAP: CARTO/OSM</div>
+  <div class="status-item" style="margin-left:auto">
+    <span>APIs: Alpha Vantage · EIA · GNews · OPEC RSS · IEA RSS · ExchangeRate-API · Netlify Functions (auto-refresh 6h)</span>
+  </div>
+  <div class="status-item">
+    <span style="color:var(--text-dim)">Informational only · Not financial advice</span>
+  </div>
+</div>
+
+<!-- ===== CHAT ===== -->
+<button id="chat-toggle">💬</button>
+
+<div id="chat-panel">
+  <div class="chat-header">
+    <span class="chat-title">Live Trader Chat</span>
+    <span class="chat-online">18 online</span>
+    <button class="chat-close" id="chat-close">✕</button>
+  </div>
+  <div id="chat-messages"></div>
+  <div id="chat-login-notice" class="chat-login-notice">
+    <a id="chat-login-link">Login or Sign Up</a> to join the chat
+  </div>
+  <div id="chat-input-area" style="display:none">
+    <input type="text" id="chat-input" placeholder="Type a message...">
+    <button id="chat-send">SEND</button>
+  </div>
+</div>
+
+<!-- ===== SCRIPTS ===== -->
+<script src="js/data.js"></script>
+  <script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+  // Populate full news page on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('news-full-list');
+    if (!el) return;
+    const extendedNews = [
+      ...CrudeRadar.newsData,
+      { source: 'Bloomberg', time: '7h ago', critical: false, tag: 'OPEC', headline: 'Saudi Arabia signals flexibility on output increase as non-OPEC supply growth stalls' },
+      { source: 'Reuters', time: '8h ago', critical: false, tag: 'PIPELINE', headline: 'Kazakhstan-Russia CPC pipeline resumes full capacity after storm damage repairs' },
+      { source: 'FT', time: '9h ago', critical: false, tag: 'TRADE', headline: 'Indian refiners snap up discounted Russian Urals crude despite logistics challenges' },
+      { source: 'AP', time: '10h ago', critical: false, tag: 'POLITICS', headline: 'U.S. strategic petroleum reserve replenishment program set to purchase 6 million barrels' },
+      { source: 'S&P Global', time: '11h ago', critical: false, tag: 'LNG', headline: 'Qatar LNG expansion projects on track; 1st new train targets Q4 2026 startup' },
+      { source: 'Wood Mac', time: '12h ago', critical: false, tag: 'INVEST', headline: 'Upstream oil and gas investment projected at $570 billion in 2025 — 5-year high' },
+    ];
+    el.innerHTML = extendedNews.map(n => `
+      <div style="padding:14px 0;border-bottom:1px solid rgba(30,45,69,0.4);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span class="news-source" style="margin:0">${n.source}</span>
+          <span class="news-tag${n.critical?' critical':''}">${n.tag}</span>
+          ${n.critical ? '<span class="news-tag critical">BREAKING</span>' : ''}
+          <span class="news-time" style="margin:0;margin-left:auto">${n.time}</span>
+        </div>
+        <div style="font-family:var(--font-ui);font-size:14px;font-weight:500;color:var(--text-primary);line-height:1.5">${n.headline}</div>
+      </div>
+    `).join('');
+  });
+</script>
+
+<script>
+  // ── API KEY MANAGEMENT ────────────────────────────────────
+  function toggleApiConfig(e) {
+    e.preventDefault();
+    const panel = document.getElementById('api-config-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    if (panel.style.display === 'block') loadSavedKeys();
+  }
+
+  function loadSavedKeys() {
+    document.getElementById('cfg-av-key').value = localStorage.getItem('cr_av_key') || '';
+    document.getElementById('cfg-eia-key').value = localStorage.getItem('cr_eia_key') || '';
+    document.getElementById('cfg-gnews-key').value = localStorage.getItem('cr_gnews_key') || '';
+    document.getElementById('cfg-newsapi-key').value = localStorage.getItem('cr_newsapi_key') || '';
+  }
+
+  function saveApiKeys() {
+    const av = document.getElementById('cfg-av-key').value.trim();
+    const eia = document.getElementById('cfg-eia-key').value.trim();
+    const gnews = document.getElementById('cfg-gnews-key').value.trim();
+    const newsapi = document.getElementById('cfg-newsapi-key').value.trim();
+    if (av) { localStorage.setItem('cr_av_key', av); CrudeAPI.KEYS.alphaVantage = av; }
+    if (eia) { localStorage.setItem('cr_eia_key', eia); CrudeAPI.KEYS.eia = eia; }
+    if (gnews) { localStorage.setItem('cr_gnews_key', gnews); CrudeAPI.KEYS.gnews = gnews; }
+    if (newsapi) { localStorage.setItem('cr_newsapi_key', newsapi); CrudeAPI.KEYS.newsapi = newsapi; }
+    document.getElementById('api-config-panel').style.display = 'none';
+    // Show feedback
+    const btn = document.querySelector('#api-config-panel button');
+    if (btn) { btn.textContent = 'SAVED! FETCHING LIVE DATA…'; setTimeout(()=>{btn.textContent='SAVE & RELOAD DATA';},3000); }
+  }
+
+  // Load saved keys on startup
+  window.addEventListener('DOMContentLoaded', () => {
+    const av = localStorage.getItem('cr_av_key');
+    const eia = localStorage.getItem('cr_eia_key');
+    const gnews = localStorage.getItem('cr_gnews_key');
+    const newsapi = localStorage.getItem('cr_newsapi_key');
+    if (av) CrudeAPI.KEYS.alphaVantage = av;
+    if (eia) CrudeAPI.KEYS.eia = eia;
+    if (gnews) CrudeAPI.KEYS.gnews = gnews;
+    if (newsapi) CrudeAPI.KEYS.newsapi = newsapi;
+  });
+
+  // Populate full news page with static data initially
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('news-full-list');
+    if (!el) return;
+    const extended = [
+      ...CrudeRadar.newsData,
+      { source: 'Bloomberg', time: '7h ago', critical: false, tag: 'OPEC', url: '#', headline: 'Saudi Arabia signals flexibility on output increase as non-OPEC supply growth stalls' },
+      { source: 'Reuters', time: '8h ago', critical: false, tag: 'PIPELINE', url: '#', headline: 'Kazakhstan-Russia CPC pipeline resumes full capacity after storm damage repairs' },
+      { source: 'FT', time: '9h ago', critical: false, tag: 'TRADE', url: '#', headline: 'Indian refiners snap up discounted Russian Urals crude despite logistics challenges' },
+      { source: 'AP', time: '10h ago', critical: false, tag: 'POLITICS', url: '#', headline: 'U.S. strategic petroleum reserve replenishment program set to purchase 6 million barrels' },
+      { source: 'S&P Global', time: '11h ago', critical: false, tag: 'LNG', url: '#', headline: 'Qatar LNG expansion projects on track; 1st new train targets Q4 2026 startup' },
+      { source: 'Wood Mac', time: '12h ago', critical: false, tag: 'INVEST', url: '#', headline: 'Upstream oil and gas investment projected at $570 billion in 2025 — 5-year high' },
+    ];
+    el.innerHTML = extended.map(n => `
+      <div style="padding:14px 0;border-bottom:1px solid rgba(30,45,69,0.4);cursor:pointer" onclick="window.open('${n.url||'#'}','_blank')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span class="news-source" style="margin:0">${n.source}</span>
+          <span class="news-tag${n.critical?' critical':''}">${n.tag}</span>
+          ${n.critical?'<span class="news-tag critical">BREAKING</span>':''}
+          <span class="news-time" style="margin:0;margin-left:auto">${n.time}</span>
+        </div>
+        <div style="font-family:var(--font-ui);font-size:14px;font-weight:500;color:var(--text-primary);line-height:1.5">${n.headline}</div>
+      </div>`).join('');
+  });
+</script>
+</body>
+</html>
