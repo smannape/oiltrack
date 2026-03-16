@@ -121,14 +121,14 @@ async function fetchText(url, timeoutMs = 15000) {
 // ══════════════════════════════════════════════════════════════
 async function fetchOilPriceLatest(contract) {
   const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
-  const raw = await fetchJSON(url, 15000, { 'Authorization': `Token ${OILPRICE_KEY}` });
+  const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.price) return null;
   return { price: parseFloat(raw.data.price), timestamp: raw.data.created_at };
 }
 
 async function fetchOilPriceHistory(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
-  const raw = await fetchJSON(url, 15000, { 'Authorization': `Token ${OILPRICE_KEY}` });
+  const url = `https://api.oilpriceapi.com/v1/prices/past_week?by_code=${contract.code}`;
+  const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
   return raw.data.prices
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
@@ -326,19 +326,30 @@ export default async function handler(req, context) {
   } else {
     console.log(`[prices] Fetching ${PRICE_CONTRACTS.length} contracts (latest + 30d history)...`);
 
-    const priceSettled = await Promise.allSettled(
-      PRICE_CONTRACTS.flatMap(c => [
-        fetchOilPriceLatest(c).then(d  => ({ type: 'latest',  c, d })),
-        fetchOilPriceHistory(c).then(d => ({ type: 'history', c, d })),
-      ])
-    );
+   // REPLACE WITH:
+    // Sequential fetching — avoids saturating Netlify outbound connections
+    for (const c of PRICE_CONTRACTS) {
+      if (!prices[c.id]) {
+        prices[c.id] = {
+          id: c.id, name: c.name, unit: c.unit,
+          exchange: c.exchange, flag: c.flag,
+          latest: null, history: [], change: null, changePct: null,
+        };
+      }
 
-    for (const r of priceSettled) {
-      if (r.status !== 'fulfilled' || !r.value?.d) continue;
-      const { type, c, d } = r.value;
-      if (!prices[c.id]) prices[c.id] = { id: c.id, name: c.name, unit: c.unit, exchange: c.exchange, flag: c.flag, latest: null, history: [], change: null, changePct: null };
-      if (type === 'latest')  prices[c.id].latest  = d;
-      if (type === 'history') prices[c.id].history = d;
+      // Fetch latest price
+      const latest = await fetchOilPriceLatest(c);
+      if (latest) prices[c.id].latest = latest;
+
+      // Small pause between requests to avoid rate limiting
+      await new Promise(r => setTimeout(r, 500));
+
+      // Fetch history
+      const history = await fetchOilPriceHistory(c);
+      if (history?.length) prices[c.id].history = history;
+
+      // Pause between contracts
+      await new Promise(r => setTimeout(r, 500));
     }
 
     // Compute day-over-day change
