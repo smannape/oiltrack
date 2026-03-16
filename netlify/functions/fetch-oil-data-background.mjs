@@ -52,20 +52,13 @@ const EIA_SERIES = [
 
 // ── RSS FEEDS ─────────────────────────────────────────────────
 // REPLACE WITH:
+// REPLACE the full RSS_FEEDS array with just the 5 that work:
 const RSS_FEEDS = [
-  // OPEC — returns 0 articles (their RSS is often empty), keep but note
-  { url: 'https://www.opec.org/opec_web/en/press_room/rss.xml',          source: 'OPEC',          tag: 'OPEC'    },
-  // IEA blocks server requests (403) — replaced with their press releases page RSS
-  { url: 'https://www.iea.org/news/rss',                                   source: 'IEA',           tag: 'IEA'     },
-  { url: 'https://oilprice.com/rss/main',                                  source: 'OilPrice.com',  tag: 'MARKET'  },
-  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx',           source: 'Rigzone',       tag: 'SUPPLY'  },
-  // Platts Feedburner dead — replaced with direct OilPrice energy feed
-  { url: 'https://oilprice.com/rss/energy',                                source: 'OilPrice Energy', tag: 'PRICE' },
-  { url: 'https://www.naturalgasintel.com/feed/',                          source: 'NGI',           tag: 'LNG'     },
-  { url: 'https://www.offshore-technology.com/feed/',                      source: 'Offshore Tech', tag: 'SUPPLY'  },
-  // Additional reliable sources
-  { url: 'https://www.worldoil.com/rss/news',                              source: 'World Oil',     tag: 'SUPPLY'  },
-  { url: 'https://www.hartenergy.com/rss/news',                            source: 'Hart Energy',   tag: 'MARKET'  },
+  { url: 'https://oilprice.com/rss/main',                        source: 'OilPrice.com',  tag: 'MARKET' },
+  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx', source: 'Rigzone',       tag: 'SUPPLY' },
+  { url: 'https://oilprice.com/rss/energy',                      source: 'OilPrice Energy', tag: 'PRICE' },
+  { url: 'https://www.naturalgasintel.com/feed/',                source: 'NGI',           tag: 'LNG'    },
+  { url: 'https://www.offshore-technology.com/feed/',            source: 'Offshore Tech', tag: 'SUPPLY' },
 ];
 
 // ── TANKERS ───────────────────────────────────────────────────
