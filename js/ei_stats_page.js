@@ -43,13 +43,17 @@
   }
 
   function getYears(from, to) {
-    const W = EI_DATA.WORLD;
+    const W = window.EI_DATA.WORLD;
     const allYears = Object.keys(W.oil_prod).map(Number).filter(y => y >= from && y <= to).sort((a,b)=>a-b);
     return allYears;
   }
 
   function worldSeries(key, years) {
-    return years.map(y => EI_DATA.WORLD[key][y] ?? null);
+    const src = window.EI_DATA.WORLD[key] || {};
+    return years.map(y => {
+      const v = src[y] ?? src[String(y)] ?? null;
+      return v;
+    });
   }
 
   // ============================================================
@@ -59,6 +63,7 @@
 
   window.initEIStatsPage = function() {
     if (statsInit) return;
+    if (!window.EI_DATA) { console.error('EI_DATA not loaded'); return; }
     statsInit = true;
 
     const years = getYears(2000, 2023);
@@ -77,13 +82,13 @@
     // Spot prices
     const pc = document.getElementById('ei-chart-prices');
     if (pc) {
-      const pyears = Object.keys(EI_DATA.PRICES).map(Number).filter(y=>y>=2000).sort((a,b)=>a-b);
+      const pyears = Object.keys(window.EI_DATA.PRICES).map(Number).filter(y=>y>=2000).sort((a,b)=>a-b);
       new Chart(pc, { type:'line', data:{
         labels: pyears.map(String),
         datasets:[
-          { label:'Brent', data:pyears.map(y=>EI_DATA.PRICES[y]?.brent), borderColor:C_BRENT, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
-          { label:'WTI',   data:pyears.map(y=>EI_DATA.PRICES[y]?.wti),   borderColor:C_WTI,   backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
-          { label:'Dubai', data:pyears.map(y=>EI_DATA.PRICES[y]?.dubai), borderColor:C_DUBAI, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
+          { label:'Brent', data:pyears.map(y=>window.EI_DATA.PRICES[y]?.brent), borderColor:C_BRENT, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
+          { label:'WTI',   data:pyears.map(y=>window.EI_DATA.PRICES[y]?.wti),   borderColor:C_WTI,   backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
+          { label:'Dubai', data:pyears.map(y=>window.EI_DATA.PRICES[y]?.dubai), borderColor:C_DUBAI, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.3 },
         ]
       }, options: mkOpts({ scales:{ x:{ grid:{color:GRID}, ticks:{color:TICK,font:{family:MONO,size:9},maxRotation:45}, border:{color:GRID} }, y:{ grid:{color:GRID}, ticks:{color:TICK,font:{family:MONO,size:9},callback:v=>'$'+v}, border:{color:GRID} } } }) });
     }
@@ -94,7 +99,7 @@
       labels: yLabels,
       datasets:[
         { label:'Gas Prod (Bcm)',  data:worldSeries('gas_prod',years), backgroundColor:C_GAS,  borderWidth:0 },
-        { label:'Gas Cons (Bcm)',  data:worldSeries('gas_cons',years), backgroundColor:C_CONS, borderWidth:0, type:'line', fill:false, borderColor:C_CONS, pointRadius:0, tension:0.3 },
+        { label:'Gas Cons (Bcm)',  data:worldSeries('gas_cons',years), backgroundColor:C_CONS, borderWidth:0, type:'line', fill:false, borderColor:C_CONS, pointRadius:0, tension:0.3, yAxisID:'y' },
       ]
     }, options: mkOpts() });
 
@@ -118,8 +123,8 @@
     if (rc) new Chart(rc, { type:'bar', data:{
       labels: ry.map(String),
       datasets:[
-        { label:'Solar (GW)', data:ry.map(y=>EI_DATA.WORLD.solar_gw[y]??null), backgroundColor:C_SOLAR, borderWidth:0 },
-        { label:'Wind (GW)',  data:ry.map(y=>EI_DATA.WORLD.wind_gw[y]??null),  backgroundColor:C_WIND,  borderWidth:0 },
+        { label:'Solar (GW)', data:ry.map(y=>window.EI_DATA.WORLD.solar_gw[y]??null), backgroundColor:C_SOLAR, borderWidth:0 },
+        { label:'Wind (GW)',  data:ry.map(y=>window.EI_DATA.WORLD.wind_gw[y]??null),  backgroundColor:C_WIND,  borderWidth:0 },
       ]
     }, options: mkOpts() });
 
@@ -131,12 +136,12 @@
         { label:'CO₂ (Mt)',          data:worldSeries('co2',    years), backgroundColor:C_CO2,  borderWidth:0 },
         { label:'Nuclear TWh (×10)', data:worldSeries('nuclear',years).map(v=>v?+(v*10).toFixed(0):null), backgroundColor:C_NUC, borderWidth:0, type:'line', fill:false, borderColor:C_NUC, pointRadius:0, tension:0.3, yAxisID:'y1' },
       ]
-    }, options: mkOpts({ scales:{ x:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9},maxRotation:45},border:{color:GRID} }, y:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID} }, y1:{ position:'right',grid:{display:false},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID} } } }) });
+    }, options: mkOpts({ scales:{ x:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9},maxRotation:45},border:{color:GRID} }, y:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID} }, y1:{ position:'right',grid:{display:false},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID},display:true } } }) });
 
     // Build reserves bars
-    renderReserveBars('oil-res-bars',  EI_DATA.OIL_RESERVES,  'val',   v => v.toFixed(1)+' Gbbl', 303.8, '#c06020');
-    renderReserveBars('gas-res-bars',  EI_DATA.GAS_RESERVES,  'val',   v => v.toFixed(1)+' Tcm',  37.4,  '#20a060');
-    renderReserveBars('coal-res-bars', EI_DATA.COAL_RESERVES, 'total', v => (v/1000).toFixed(0)+'k Mt', 248941, '#906030');
+    renderReserveBars('oil-res-bars',  window.EI_DATA.OIL_RESERVES,  'val',   v => v.toFixed(1)+' Gbbl', 303.8, '#c06020');
+    renderReserveBars('gas-res-bars',  window.EI_DATA.GAS_RESERVES,  'val',   v => v.toFixed(1)+' Tcm',  37.4,  '#20a060');
+    renderReserveBars('coal-res-bars', window.EI_DATA.COAL_RESERVES, 'total', v => (v/1000).toFixed(0)+'k Mt', 248941, '#906030');
 
     // Oil regional stacked bar
     const regions = [
@@ -164,7 +169,7 @@
     // Gas donut
     const gdCanvas = document.getElementById('ei-chart-gas-res-donut');
     if (gdCanvas) {
-      const top = EI_DATA.GAS_RESERVES.slice(0,8);
+      const top = window.EI_DATA.GAS_RESERVES.slice(0,8);
       new Chart(gdCanvas, { type:'doughnut', data:{
         labels: top.map(r=>r.name),
         datasets:[{ data:top.map(r=>r.val), backgroundColor:['#c05010','#8a2020','#502880','#107060','#2060a0','#8a5010','#3a8030','#1a5050'], borderColor:'#0a0c0f', borderWidth:2 }]
@@ -174,7 +179,7 @@
     // Coal donut
     const cdCanvas = document.getElementById('ei-chart-coal-res-donut');
     if (cdCanvas) {
-      const top = EI_DATA.COAL_RESERVES.slice(0,8);
+      const top = window.EI_DATA.COAL_RESERVES.slice(0,8);
       new Chart(cdCanvas, { type:'doughnut', data:{
         labels: top.map(r=>r.name),
         datasets:[{ data:top.map(r=>r.total), backgroundColor:['#2060a0','#502880','#107060','#8a2020','#8a5010','#3a3a3a','#607020','#3a5050'], borderColor:'#0a0c0f', borderWidth:2 }]
@@ -199,7 +204,7 @@
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = data.map(r => {
-      const v = r[valKey] || 0;
+      const v = (r[valKey] != null ? r[valKey] : 0);
       const pct = Math.min(100, (v / maxVal * 100)).toFixed(1);
       return `<div class="res-bar-row">
         <div class="res-bar-name" title="${r.name}">${r.name}</div>
@@ -226,14 +231,15 @@
 
   window.initEICountryPage = function() {
     if (countryInit) return;
+    if (!window.EI_DATA) { console.error('EI_DATA not loaded'); return; }
     countryInit = true;
 
-    const countries = Object.keys(EI_DATA.COUNTRY_PROFILES);
+    const countries = Object.keys(window.EI_DATA.COUNTRY_PROFILES);
     const list = document.getElementById('cd-country-list');
     if (!list) return;
 
     list.innerHTML = countries.map(c => {
-      const p = EI_DATA.COUNTRY_PROFILES[c];
+      const p = window.EI_DATA.COUNTRY_PROFILES[c];
       return `<button class="cd-cty-btn" data-country="${c}">${p.flag} ${c}</button>`;
     }).join('');
 
@@ -251,8 +257,8 @@
 
   function loadCountry(name) {
     activeCountry = name;
-    const p = EI_DATA.COUNTRY_PROFILES[name];
-    const flows = EI_DATA.CRUDE_FLOWS[name] || EI_DATA.CRUDE_FLOWS[name.replace(' Fed.','').replace(' Federation','')] || {};
+    const p = window.EI_DATA.COUNTRY_PROFILES[name];
+    const flows = window.EI_DATA.CRUDE_FLOWS[name] || window.EI_DATA.CRUDE_FLOWS[name.replace(' Fed.','').replace(' Federation','')] || {};
 
     // KPIs
     const fmt = v => v ? v.toLocaleString() : '—';
@@ -261,7 +267,9 @@
     const prodDelta = p.oil_prod_2023 && p.oil_prod_2020 ? (((p.oil_prod_2023-p.oil_prod_2020)/p.oil_prod_2020)*100).toFixed(1) : null;
     setEl('cd-kd-prod', prodDelta ? `${prodDelta > 0 ? '▲' : '▼'} ${Math.abs(prodDelta)}% vs 2020`, prodDelta > 0 ? 'var(--accent-green)' : 'var(--accent-red)');
 
-    const expMt = flows['Total'] || Object.values(flows).filter((_,i)=>Object.keys(flows)[i]!=='Total').reduce((s,v)=>s+v,0);
+    const expMt = flows['Total'] != null
+      ? flows['Total']
+      : Object.entries(flows).filter(([k])=>k!=='Total').reduce((s,[,v])=>s+v, 0);
     setEl('cd-kv-exp', expMt ? expMt.toFixed(1) : '—');
     setEl('cd-ku-exp', 'Mt crude · 2024');
     setEl('cd-kd-exp', expMt ? `≈ ${(expMt*7.33/365).toFixed(0)} kbd` : 'No export data');
@@ -364,7 +372,7 @@
     svgParts.push(`<text x="${rightX + rightW/2}" y="16" text-anchor="middle" font-size="8" fill="#00b0ff" letter-spacing="1.5">DESTINATION</text>`);
 
     // Source node
-    const p = EI_DATA.COUNTRY_PROFILES[country];
+    const p = window.EI_DATA.COUNTRY_PROFILES[country];
     const srcColor = '#00e676';
     svgParts.push(`<rect x="${leftX}" y="${srcY}" width="${leftW}" height="${srcH}" rx="2" fill="rgba(0,230,118,0.08)" stroke="#00e676" stroke-width="1"/>`);
     svgParts.push(`<text x="${leftX+leftW/2}" y="${srcY+srcH/2-8}" text-anchor="middle" font-size="11" fill="#00e676">${p?.flag || ''} ${country}</text>`);
