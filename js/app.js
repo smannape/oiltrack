@@ -99,12 +99,9 @@
       setStatusBadge('api-status-eia', 'demo', 'EIA DEMO');
     }
 
-    // ── Tankers ─────────────────────────────────────────────
+    // ── Tankers (from AISstream Blob) ───────────────────────
     if (tankersResult.status === 'fulfilled' && Array.isArray(tankersResult.value)) {
-      CrudeRadar.tankers = tankersResult.value;
-      renderTankersTable(tankersResult.value);
-      if (state.mapMode === 'tankers') renderMapMode('tankers');
-      setStatusBadge('api-status-tankers', 'live', 'AIS LIVE');
+      applyLiveTankers(tankersResult.value);
     } else {
       setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
     }
@@ -115,8 +112,47 @@
       updateFXDisplay();
     }
 
-    // Re-fetch every 5 minutes (matches Blob CDN TTL)
+    // Re-fetch every 5 minutes
     setTimeout(fetchLiveData, 5 * 60 * 1000);
+  }
+
+  // ── APPLY LIVE TANKERS ───────────────────────────────────
+  function applyLiveTankers(tankers) {
+    if (!tankers?.length) return;
+
+    // Normalise field names — AISstream uses different casing than static data
+    const normalised = tankers.map(t => ({
+      mmsi:        String(t.mmsi || ''),
+      name:        t.name        || 'UNKNOWN',
+      type:        t.vesselClass || t.type || 'Tanker',
+      flag:        t.flag        || '🚢',
+      cargo:       t.cargo       || 'Crude Oil',
+      lat:         parseFloat(t.lat || 0),
+      lng:         parseFloat(t.lng || 0),
+      speed:       String(t.speed || '0.0'),
+      course:      t.course      || 0,
+      status:      t.status      || 'underway',
+      destination: t.destination || t.to || '—',
+      eta:         t.eta         || '—',
+      imo:         t.imo         || '—',
+      from:        t.from        || '—',
+      to:          t.to          || t.destination || '—',
+      updatedAt:   t.updatedAt   || '',
+      stale:       t.stale       || false,
+    }));
+
+    const liveTankers = normalised.filter(t => !t.stale);
+    const staleTankers = normalised.filter(t => t.stale);
+
+    CrudeRadar.tankers = normalised;
+    renderTankersTable(normalised);
+    if (state.mapMode === 'tankers') renderMapMode('tankers');
+
+    const badge = liveTankers.length > 0
+      ? `AIS LIVE · ${liveTankers.length} vessels`
+      : 'AIS CACHED';
+    setStatusBadge('api-status-tankers', liveTankers.length > 0 ? 'live' : 'demo', badge);
+    console.log(`[CrudeRadar] AIS: ${liveTankers.length} live, ${staleTankers.length} cached`);
   }
 
   // ── APPLY LIVE PRICES ────────────────────────────────────
@@ -418,18 +454,45 @@
   function renderTankersTable(tankers) {
     const tbody = document.getElementById('tankers-tbody');
     if (!tbody) return;
-    tbody.innerHTML = (tankers || []).map(t =>
-      `<tr>
-        <td><span class="tanker-status-dot ${t.status}"></span>${t.name}</td>
+
+    // Update row count badge if element exists
+    const countEl = document.getElementById('tankers-count');
+    if (countEl) countEl.textContent = (tankers || []).length + ' vessels';
+
+    tbody.innerHTML = (tankers || []).map(t => {
+      const lat    = parseFloat(t.lat || 0);
+      const lng    = parseFloat(t.lng || 0);
+      const speed  = parseFloat(t.speed || 0);
+      const status = t.status || 'underway';
+      // Stale = position from previous fetch cycle
+      const staleMarker = t.stale
+        ? '<span style="color:var(--text-dim);font-size:9px;margin-left:4px">CACHED</span>'
+        : '<span style="color:var(--accent-green);font-size:9px;margin-left:4px">●</span>';
+      // Course arrow based on heading
+      const courseArrow = t.course
+        ? `<span style="display:inline-block;transform:rotate(${t.course}deg);font-size:12px">↑</span>`
+        : '';
+
+      return `<tr style="${t.stale ? 'opacity:0.6' : ''}">
+        <td>
+          <span class="tanker-status-dot ${status}"></span>
+          <span style="font-weight:500">${escapeHtml(t.name)}</span>
+          ${staleMarker}
+          ${t.imo && t.imo !== '—' ? `<div style="font-size:9px;color:var(--text-dim);margin-top:1px">IMO ${t.imo}</div>` : ''}
+        </td>
         <td>${t.flag} ${t.type}</td>
-        <td>${t.from}</td>
-        <td>${t.to}</td>
-        <td style="font-family:var(--font-mono);font-size:11px">${parseFloat(t.lat).toFixed(2)}°, ${parseFloat(t.lng).toFixed(2)}°</td>
-        <td>${t.speed} kn</td>
-        <td><span class="tag">${t.status.toUpperCase()}</span></td>
-        <td style="font-family:var(--font-mono)">${t.eta}</td>
-      </tr>`
-    ).join('');
+        <td style="color:var(--text-dim)">${escapeHtml(t.from)}</td>
+        <td style="color:var(--text-bright)">${escapeHtml(t.destination || t.to)}</td>
+        <td style="font-family:var(--font-mono);font-size:11px">
+          ${lat.toFixed(3)}°, ${lng.toFixed(3)}°
+        </td>
+        <td style="font-family:var(--font-mono)">
+          ${courseArrow} ${speed.toFixed(1)} kn
+        </td>
+        <td><span class="tag">${status.toUpperCase()}</span></td>
+        <td style="font-family:var(--font-mono);font-size:11px">${escapeHtml(t.eta)}</td>
+      </tr>`;
+    }).join('');
   }
 
   // ════════════════════════════════════════════════════════════
