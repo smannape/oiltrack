@@ -2,7 +2,7 @@
 // Auto-generated from EI-Stats-Review-ALL-data.xlsx
 // DO NOT EDIT MANUALLY
 
-const EI_DATA = (function() {
+window.EI_DATA = (function() {
 
   // ── World totals time series (key years 2000-2023) ──────────────────────────
   const WORLD = {
