@@ -124,9 +124,16 @@ window.CrudeAPI = (function () {
       wti:     extract('wti'),
       brent:   extract('brent'),
       dubai:   extract('dubai'),
-      natgas:  extract('crude_ng'),  // contract id is crude_ng, mapped to natgas key
+      natgas:  extract('crude_ng'),
       rbob:    extract('rbob'),
-      heatoil: extract('hho'),       // contract id is hho, mapped to heatoil key
+      heatoil: extract('hho'),
+      // Derived contracts — computed server-side from benchmarks
+      opec:    extract('opec'),
+      urals:   extract('urals'),
+      wcs:     extract('wcs'),
+      lco:     extract('lco'),
+      bonny:   extract('bonny'),
+      espo:    extract('espo'),
     };
 
     return Object.values(result).some(v => v !== null) ? result : null;
