@@ -18,6 +18,7 @@
     liveDataActive:    false,   // true once real prices arrive → stops simulation
     chartsInitialized: false,
     statsInitialized:  false,
+    countryInitialized: false,
     liveNews:          [],
     telegramNews:      [],
     fxRates:           null,
@@ -792,6 +793,7 @@
     document.querySelectorAll('[data-page]').forEach(l => l.classList.toggle('active', l.dataset.page === page));
     if (page === 'charts') initChartsPage();
     if (page === 'stats')  initStatsPage();
+    if (page === 'country') initCountryPage();
     if (page === 'dashboard' && state.map) setTimeout(() => state.map.invalidateSize(), 100);
   }
 
@@ -991,26 +993,13 @@
   function initStatsPage() {
     if (state.statsInitialized) return;
     state.statsInitialized = true;
-    const barOpts = {
-      responsive:true, maintainAspectRatio:false,
-      plugins: { legend:{ labels:{color:'#8899aa',font:{family:'Share Tech Mono',size:10},padding:12,boxWidth:12} }, tooltip:{backgroundColor:'#0e1117',borderColor:'#1e2d45',borderWidth:1,titleColor:'#ff6b00',bodyColor:'#e0e8f0',titleFont:{family:'Share Tech Mono',size:11},bodyFont:{family:'Share Tech Mono',size:12}} },
-      scales: { x:{grid:{color:'rgba(30,45,69,0.4)'},ticks:{color:'#4a6078',font:{family:'Share Tech Mono',size:10}},border:{color:'rgba(30,45,69,0.6)'}}, y:{grid:{color:'rgba(30,45,69,0.4)'},ticks:{color:'#4a6078',font:{family:'Share Tech Mono',size:10}},border:{color:'rgba(30,45,69,0.6)'}} },
-    };
-    const pvs = document.getElementById('chart-prod-vs-cons');
-    if (pvs) {
-      const d = CrudeRadar.statsData.productionVsConsumption;
-      new Chart(pvs.getContext('2d'), { type:'bar', data:{ labels:d.years, datasets:[{label:'Production (Mb/d)',data:d.production,backgroundColor:'rgba(255,107,0,0.7)',borderColor:'#ff6b00',borderWidth:1},{label:'Consumption (Mb/d)',data:d.consumption,backgroundColor:'rgba(0,176,255,0.5)',borderColor:'#00b0ff',borderWidth:1}] }, options:barOpts });
-    }
-    const opec = document.getElementById('chart-opec-share');
-    if (opec) {
-      const d = CrudeRadar.statsData.opecVsNonOpec;
-      const colors = ['#ff6b00','#ffb300','#ff1744','#00e676','#00b0ff','#9c27b0','#00e5ff','#ff9800','#4caf50','#2196f3','#f44336','#8bc34a','#03a9f4','#cddc39','#607d8b'];
-      new Chart(opec.getContext('2d'), { type:'doughnut', data:{ labels:d.labels, datasets:[{data:d.data,backgroundColor:colors,borderColor:'#0a0c0f',borderWidth:2}] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:true,position:'right',labels:{color:'#8899aa',font:{family:'Share Tech Mono',size:10},padding:8,boxWidth:10}}, tooltip:{backgroundColor:'#0e1117',borderColor:'#1e2d45',borderWidth:1,titleColor:'#ff6b00',bodyColor:'#e0e8f0',titleFont:{family:'Share Tech Mono',size:11},bodyFont:{family:'Share Tech Mono',size:12},callbacks:{label:ctx=>' '+ctx.label+': '+ctx.raw+' Mb/d'}} } } });
-    }
-    const cons = document.getElementById('chart-consumption');
-    if (cons) {
-      new Chart(cons.getContext('2d'), { type:'bar', data:{ labels:CrudeRadar.consumption.map(c=>c.country), datasets:[{label:'Consumption Mb/d',data:CrudeRadar.consumption.map(c=>c.consumption),backgroundColor:CrudeRadar.consumption.map((_,i)=>i===0?'rgba(255,23,68,0.7)':i===1?'rgba(255,107,0,0.7)':'rgba(0,176,255,0.5)'),borderWidth:1}] }, options:{...barOpts,indexAxis:'y'} });
-    }
+    if (typeof window.initEIStatsPage === 'function') window.initEIStatsPage();
+  }
+
+  function initCountryPage() {
+    if (state.countryInitialized) return;
+    state.countryInitialized = true;
+    if (typeof window.initEICountryPage === 'function') window.initEICountryPage();
   }
 
   // ════════════════════════════════════════════════════════════
