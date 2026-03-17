@@ -164,55 +164,10 @@
       console.log(`[CrudeRadar] Applied live prices to ${updated} tiles`);
     }
 
-    // Update chart history — deduplicate intraday ticks to one value per day
-    function dedupDaily(history) {
-      if (!history?.length) return [];
-      const byDay = {};
-      history.forEach(h => {
-        const day = (h.period || '').slice(0, 10);
-        if (day) byDay[day] = h.value;
-      });
-      return Object.entries(byDay)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([period, value]) => ({ period, value }));
-    }
-
-    const histMap = {
-      wti:     parsedPrices.wti?.history,
-      brent:   parsedPrices.brent?.history,
-      dubai:   parsedPrices.dubai?.history,
-      natgas:  parsedPrices.natgas?.history,
-      rbob:    parsedPrices.rbob?.history,
-      heatoil: parsedPrices.heatoil?.history,
-    };
-
-    let chartDataChanged = false;
-    for (const [key, rawHistory] of Object.entries(histMap)) {
-      if (!rawHistory?.length) continue;
-      const history = dedupDaily(rawHistory);
-      if (!history.length) continue;
-      CrudeRadar.priceHistory[key] = history.map(h => h.value);
-      if (key === 'wti') {
-        CrudeRadar.chartLabels = history.map(h => {
-          const d = new Date(h.period);
-          return isNaN(d.getTime()) ? h.period : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        });
-        console.log('[charts] History: ' + history.length + ' daily points from ' + history[0]?.period + ' to ' + history[history.length-1]?.period);
-      }
-      chartDataChanged = true;
-    }
-
-    // Re-draw charts with fresh deduplicated data
-    if (chartDataChanged && state.chartsInitialized) {
-      state.chartsInitialized = false;
-      try {
-        ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
-          const canvas = document.getElementById(id);
-          if (canvas) { const c = Chart.getChart(canvas); if (c) c.destroy(); }
-        });
-      } catch (_) {}
-      initChartsPage();
-    }
+    // OilPriceAPI history is intraday ticks — NOT reliable for charts.
+    // Charts always use EIA monthly data (loaded in applyEIACache).
+    // We only use OilPriceAPI for current price tiles, not chart history.
+    // Chart rendering happens in applyEIACache after EIA data loads.
   }
 
   // ── APPLY EIA CACHE ─────────────────────────────────────
@@ -256,41 +211,46 @@
       renderPriceGrid();
     }
 
-    // Use EIA monthly as chart history fallback when:
-    //  a) OilPriceAPI history is empty, OR
-    //  b) OilPriceAPI returned intraday ticks (fewer than 5 unique dates = bad history)
-    const wtiUniqueDates = new Set((CrudeRadar.priceHistory.wti || []).map((_, i) => CrudeRadar.chartLabels?.[i])).size;
-    const needsEIAFallback = !CrudeRadar.priceHistory.wti?.length || wtiUniqueDates < 5;
-
-    if (needsEIAFallback && eiaData.wtiMonthly?.length) {
-      const s = eiaData.wtiMonthly.slice(0, 30).reverse();
-      CrudeRadar.priceHistory.wti = s.map(d => d.value);
-      CrudeRadar.chartLabels = s.map(d => {
-        // EIA monthly periods are YYYY-MM — format as Mon YYYY
-        const parts = d.period.split('-');
-        if (parts.length === 2) {
-          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          return months[parseInt(parts[1]) - 1] + ' ' + parts[0];
-        }
-        return d.period;
-      });
-      console.log('[charts] Using EIA monthly fallback for WTI history: ' + s.length + ' points');
-    }
-    if (needsEIAFallback && eiaData.brentMonthly?.length) {
-      CrudeRadar.priceHistory.brent = eiaData.brentMonthly.slice(0, 30).reverse().map(d => d.value);
-    }
-
-    // If charts page is open and we just loaded better history, re-render
-    if (needsEIAFallback && state.chartsInitialized) {
-      state.chartsInitialized = false;
-      try {
-        ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
-          const canvas = document.getElementById(id);
-          if (canvas) { const c = Chart.getChart(canvas); if (c) c.destroy(); }
+    // ── CHART HISTORY (always from EIA monthly — clean 30-point history) ──
+    // EIA monthly gives one clean data point per month, perfect for charts.
+    // Format YYYY-MM periods as "Jan 2025" labels.
+    function eiaToChartData(series, count = 30) {
+      if (!series?.length) return null;
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return [...series]
+        .slice(0, count)
+        .reverse()
+        .map(d => {
+          const parts = (d.period || '').split('-');
+          const label = parts.length === 2
+            ? months[parseInt(parts[1]) - 1] + ' ' + parts[0]
+            : d.period;
+          return { label, value: d.value };
         });
-      } catch (_) {}
-      initChartsPage();
     }
+
+    const wtiChart   = eiaToChartData(eiaData.wtiMonthly,   30);
+    const brentChart = eiaToChartData(eiaData.brentMonthly, 30);
+
+    if (wtiChart?.length) {
+      CrudeRadar.priceHistory.wti = wtiChart.map(d => d.value);
+      CrudeRadar.chartLabels      = wtiChart.map(d => d.label);
+      console.log('[charts] EIA WTI history loaded: ' + wtiChart.length + ' months (' + wtiChart[0]?.label + ' → ' + wtiChart[wtiChart.length-1]?.label + ')');
+    }
+    if (brentChart?.length) {
+      CrudeRadar.priceHistory.brent = brentChart.map(d => d.value);
+    }
+
+    // Always re-render charts when EIA data loads — this is the authoritative history source
+    state.chartsInitialized = false;
+    try {
+      ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) { const c = Chart.getChart(canvas); if (c) c.destroy(); }
+      });
+    } catch (_) {}
+    // Only render immediately if charts page is visible
+    if (state.page === 'charts') initChartsPage();
   }
 
   // ── STATUS BADGE ─────────────────────────────────────────
