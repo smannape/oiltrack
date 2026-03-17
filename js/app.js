@@ -133,8 +133,14 @@
       crude_ng: 'natgas',
       hho:      'heatoil',
       rbob:     'rbob',
+      // Derived contracts
+      opec:     'opec',
+      urals:    'urals',
+      wcs:      'wcs',
+      lco:      'lco',
+      bonny:    'bonny',
+      espo:     'espo',
     };
-
     let updated = 0;
     for (const [contractId, priceKey] of Object.entries(idToKey)) {
       const data = parsedPrices[priceKey];
