@@ -125,15 +125,16 @@
   function applyLivePrices(parsedPrices) {
     if (!parsedPrices) return;
 
-    // Map contract IDs to the keys in parsedPrices
+    // Map contract IDs (state.contracts[].id) → parsedPrices keys
     const idToKey = {
+      // Live from OilPriceAPI
       wti:      'wti',
       brent:    'brent',
       dubai:    'dubai',
       crude_ng: 'natgas',
       hho:      'heatoil',
       rbob:     'rbob',
-      // Derived contracts
+      // Derived server-side from benchmarks
       opec:     'opec',
       urals:    'urals',
       wcs:      'wcs',
@@ -141,6 +142,7 @@
       bonny:    'bonny',
       espo:     'espo',
     };
+
     let updated = 0;
     for (const [contractId, priceKey] of Object.entries(idToKey)) {
       const data = parsedPrices[priceKey];
@@ -315,38 +317,25 @@
   // ════════════════════════════════════════════════════════════
   // PRICE GRID
   // ════════════════════════════════════════════════════════════
-  // REPLACE WITH:
   function renderPriceGrid() {
     const grid = document.getElementById('price-grid');
     if (!grid) return;
     grid.innerHTML = state.contracts.map(c => {
-      if (c.price <= 0) {
-        return `<div class="price-card neutral" id="pc-${c.id}">
-          <div class="label">${c.flag} ${c.label}</div>
-          <div class="name">${c.name}</div>
-          <div class="price">—</div>
-          <div class="change" style="color:var(--text-dim)">Loading...</div>
-          <div class="exchange">${c.exchange} · ${c.unit}</div>
-        </div>`;
-      }
-
-      // Use real API change if available
-      const hasLiveChange = c._liveChange !== null && c._liveChange !== undefined;
-      const chg = hasLiveChange ? c._liveChange : (c.prev > 0 ? c.price - c.prev : null);
-      const pct = hasLiveChange ? c._liveChangePct
-                : (chg !== null && c.prev > 0 ? (chg / c.prev) * 100 : null);
-
-      const dir   = chg === null ? 'neutral' : chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
-      const arrow = chg === null ? '' : chg > 0 ? '▲' : chg < 0 ? '▼' : '—';
-
-      const chgStr = chg !== null
-        ? `${arrow} ${Math.abs(chg).toFixed(2)} (${Math.abs(pct).toFixed(2)}%)`
-        : `<span style="color:var(--text-dim);font-size:10px">change unavailable</span>`;
-
+      // Use live change from API when available
+      const chg = (c._liveChange !== undefined && c._liveChange !== null)
+        ? c._liveChange
+        : (c.price - c.prev);
+      const pct = (c._liveChangePct !== undefined && c._liveChangePct !== null)
+        ? Math.abs(c._liveChangePct).toFixed(2)
+        : Math.abs((chg / (c.prev || c.price || 1)) * 100).toFixed(2);
+      const dir   = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
+      const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '—';
+      const priceStr = c.price > 0 ? '$' + c.price.toFixed(2) : '—';
+      const chgStr   = c.price > 0 ? `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)` : 'Loading...';
       return `<div class="price-card ${dir}" id="pc-${c.id}">
         <div class="label">${c.flag} ${c.label}</div>
         <div class="name">${c.name}</div>
-        <div class="price">$${c.price.toFixed(2)}</div>
+        <div class="price">${priceStr}</div>
         <div class="change">${chgStr}</div>
         <div class="exchange">${c.exchange} · ${c.unit}</div>
       </div>`;
