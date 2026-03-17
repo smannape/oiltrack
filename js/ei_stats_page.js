@@ -13,7 +13,7 @@
                     titleColor:'#ff6b00', bodyColor:'#e0e8f0',
                     titleFont:{family:MONO,size:11}, bodyFont:{family:MONO,size:11} };
 
-  // ── colour palettes ──────────────────────────────────────────────────────────
+  // ?? colour palettes ??????????????????????????????????????????????????????????
   const C_OIL    = 'rgba(255,107,0,0.75)';
   const C_CONS   = 'rgba(0,176,255,0.55)';
   const C_BRENT  = '#ff6b00';
@@ -133,8 +133,8 @@
     if (cn) new Chart(cn, { type:'bar', data:{
       labels: yLabels,
       datasets:[
-        { label:'CO₂ (Mt)',          data:worldSeries('co2',    years), backgroundColor:C_CO2,  borderWidth:0 },
-        { label:'Nuclear TWh (×10)', data:worldSeries('nuclear',years).map(v=>v?+(v*10).toFixed(0):null), backgroundColor:C_NUC, borderWidth:0, type:'line', fill:false, borderColor:C_NUC, pointRadius:0, tension:0.3, yAxisID:'y1' },
+        { label:'CO2 (Mt)',          data:worldSeries('co2',    years), backgroundColor:C_CO2,  borderWidth:0 },
+        { label:'Nuclear TWh (x10)', data:worldSeries('nuclear',years).map(v=>v?+(v*10).toFixed(0):null), backgroundColor:C_NUC, borderWidth:0, type:'line', fill:false, borderColor:C_NUC, pointRadius:0, tension:0.3, yAxisID:'y1' },
       ]
     }, options: mkOpts({ scales:{ x:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9},maxRotation:45},border:{color:GRID} }, y:{ grid:{color:GRID},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID} }, y1:{ position:'right',grid:{display:false},ticks:{color:TICK,font:{family:MONO,size:9}},border:{color:GRID},display:true } } }) });
 
@@ -210,7 +210,7 @@
         <div class="res-bar-name" title="${r.name}">${r.name}</div>
         <div class="res-bar-track"><div class="res-bar-fill" style="width:${pct}%;background:${color}"></div></div>
         <div class="res-bar-val">${fmtFn(v)}</div>
-        <div class="res-bar-pct">${r.share!=null?r.share.toFixed(1)+'%':'—'}</div>
+        <div class="res-bar-pct">${r.share!=null?r.share.toFixed(1)+'%':'-'}</div>
       </div>`;
     }).join('');
   }
@@ -261,30 +261,31 @@
     const flows = window.EI_DATA.CRUDE_FLOWS[name] || window.EI_DATA.CRUDE_FLOWS[name.replace(' Fed.','').replace(' Federation','')] || {};
 
     // KPIs
-    const fmt = v => v ? v.toLocaleString() : '—';
+    const fmt = v => v ? v.toLocaleString() : '-';
     setEl('cd-kv-prod', fmt(p.oil_prod_2023));
-    setEl('cd-ku-prod', 'kbd · 2023');
+    setEl('cd-ku-prod', 'kbd / 2023');
     const prodDelta = p.oil_prod_2023 && p.oil_prod_2020 ? (((p.oil_prod_2023-p.oil_prod_2020)/p.oil_prod_2020)*100).toFixed(1) : null;
-    setEl('cd-kd-prod', prodDelta ? `${prodDelta > 0 ? '▲' : '▼'} ${Math.abs(prodDelta)}% vs 2020`, prodDelta > 0 ? 'var(--accent-green)' : 'var(--accent-red)');
+    const prodArrow = prodDelta > 0 ? '^ ' : 'v ';
+    setEl('cd-kd-prod', prodDelta ? (prodArrow + Math.abs(prodDelta) + '% vs 2020') : '', prodDelta > 0 ? 'var(--accent-green)' : 'var(--accent-red)');
 
     const expMt = flows['Total'] != null
       ? flows['Total']
-      : Object.entries(flows).filter(([k])=>k!=='Total').reduce((s,[,v])=>s+v, 0);
-    setEl('cd-kv-exp', expMt ? expMt.toFixed(1) : '—');
-    setEl('cd-ku-exp', 'Mt crude · 2024');
-    setEl('cd-kd-exp', expMt ? `≈ ${(expMt*7.33/365).toFixed(0)} kbd` : 'No export data');
+      : Object.entries(flows).filter(function(e){return e[0]!=='Total';}).reduce(function(s,e){return s+e[1];}, 0);
+    setEl('cd-kv-exp', expMt ? expMt.toFixed(1) : '-');
+    setEl('cd-ku-exp', 'Mt crude / 2024');
+    setEl('cd-kd-exp', expMt ? `~ ${(expMt*7.33/365).toFixed(0)} kbd` : 'No export data');
 
-    setEl('cd-kv-res', p.oil_reserves ? p.oil_reserves.toFixed(1) : '—');
-    setEl('cd-ku-res', 'Gbbl proved (2020)');
-    setEl('cd-kd-res', p.rp_oil ? `R/P ratio: ${p.rp_oil} yrs` : p.opec ? '● OPEC member' : '');
+    setEl('cd-kv-res', p.oil_reserves ? p.oil_reserves.toFixed(1) : '-');
+    setEl('cd-ku-res', 'Gbbl proved 2020');
+    setEl('cd-kd-res', p.rp_oil ? `R/P ratio: ${p.rp_oil} yrs` : p.opec ? 'OPEC member' : '');
 
-    setEl('cd-kv-gas', p.gas_prod_2023 ? fmt(p.gas_prod_2023) : '—');
-    setEl('cd-ku-gas', 'Bcm · 2023');
+    setEl('cd-kv-gas', p.gas_prod_2023 ? fmt(p.gas_prod_2023) : '-');
+    setEl('cd-ku-gas', 'Bcm - 2023');
     setEl('cd-kd-gas', p.gas_reserves ? `Reserves: ${p.gas_reserves} Tcm` : '');
 
     // Sankey title
-    setEl('sankey-title', `Crude Oil Export Trade Flows — ${name} (2024)`);
-    setEl('sankey-sub', `${name} → destination region · crude only · million tonnes`);
+    setEl('sankey-title', `Crude Oil Export Trade Flows - ${name} (2024)`);
+    setEl('sankey-sub', `${name} -> destination region - crude only - million tonnes`);
 
     // Render Sankey
     renderSankey(name, flows);
@@ -321,7 +322,7 @@
     } else if (destEl) {
       destEl.innerHTML = `<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);padding:20px 0">No crude export data for this country in 2024</div>`;
     }
-    setEl('cd-hist-title', `${name} — Oil Production History (kbd)`);
+    setEl('cd-hist-title', `${name} - Oil Production History (kbd)`);
   }
 
   function setEl(id, text, color) {
@@ -331,7 +332,7 @@
     if (color) el.style.color = color;
   }
 
-  // ── D3-style Sankey rendered with plain SVG ──────────────────────────────────
+  // ?? D3-style Sankey rendered with plain SVG ??????????????????????????????????
   function renderSankey(country, flows) {
     const wrap = document.getElementById('sankey-svg-wrap');
     if (!wrap) return;
@@ -430,10 +431,10 @@
         const kbd = el.dataset.kbd || (parseFloat(mt)*7.33/365).toFixed(0);
         const from = el.dataset.from || country;
         const to   = el.dataset.to   || el.dataset.dest;
-        const sharePct = totalExports > 0 ? (parseFloat(mt)/totalExports*100).toFixed(1) : '—';
-        tooltip.innerHTML = `<div style="color:var(--accent-green);margin-bottom:3px">${from} → ${to}</div>` +
+        const sharePct = totalExports > 0 ? (parseFloat(mt)/totalExports*100).toFixed(1) : '-';
+        tooltip.innerHTML = `<div style="color:var(--accent-green);margin-bottom:3px">${from} -> ${to}</div>` +
           `Volume: <b>${mt} Mt</b><br>` +
-          `≈ ${kbd} kbd daily<br>` +
+          `~ ${kbd} kbd daily<br>` +
           `Share of exports: ${sharePct}%`;
         tooltip.style.display = 'block';
         tooltip.style.left  = (e.clientX + 14) + 'px';
