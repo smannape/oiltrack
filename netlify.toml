@@ -53,6 +53,17 @@
   force  = true
 
 [[redirects]]
+  from   = "/api/ais-refresh"
+  to     = "/.netlify/functions/fetch-ais-data"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/oil-tankers"
+  to     = "/.netlify/functions/get-oil-data"
+  status = 200
+
+[[redirects]]
   from   = "/api/oil-telegram"
   to     = "/.netlify/functions/get-telegram-data"
   status = 200
