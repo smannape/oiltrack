@@ -1,17 +1,5 @@
 // ============================================================
-// CRUDE RADAR — js/api.js
-//
-// Reads from Netlify Blob endpoints served by get-oil-data.mjs.
-// All functions return null on error — app.js falls back gracefully.
-//
-// Endpoints (netlify.toml redirects):
-//   /api/oil-prices   → prices blob
-//   /api/oil-news     → news blob
-//   /api/oil-eia      → EIA blob
-//   /api/oil-tankers  → tankers blob
-//   /api/oil-meta     → meta/status blob
-//   POST /api/oil-refresh → triggers background refresh
-//   /api/oil-telegram → Telegram messages
+// CRUDE RADAR — js/api.js  v3
 // ============================================================
 
 window.CrudeAPI = (function () {
@@ -22,6 +10,8 @@ window.CrudeAPI = (function () {
     try {
       const res = await fetch(path, { signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error('Not JSON — got HTML page');
       const data = await res.json();
       if (data?.status === 'error' || data?.status === 'initializing') return null;
       return data;
@@ -38,13 +28,13 @@ window.CrudeAPI = (function () {
     if (data) {
       const keys = Object.keys(data.prices || {});
       console.log(`[CrudeAPI] prices blob: ${keys.length} contracts — ${keys.join(', ')}`);
-      const wti = data.prices?.wti?.latest?.price;
-      console.log(`[CrudeAPI] WTI from blob: $${wti}`);
+      console.log(`[CrudeAPI] WTI from blob: $${data.prices?.wti?.latest?.price}`);
     }
     return data;
   }
-  async function fetchCachedNews()  { return getBlob('/api/oil-news');  }
-  async function fetchCachedEIA()   { return getBlob('/api/oil-eia');   }
+
+  async function fetchCachedNews()    { return getBlob('/api/oil-news');    }
+  async function fetchCachedEIA()     { return getBlob('/api/oil-eia');     }
   async function fetchMeta()          { return getBlob('/api/oil-meta');    }
 
   async function fetchCachedTankers() {
@@ -59,7 +49,7 @@ window.CrudeAPI = (function () {
     } catch (e) { return { error: e.message }; }
   }
 
-  // ── FX RATES (ExchangeRate-API — free, no key) ─────────────
+  // ── FX RATES ───────────────────────────────────────────────
   async function fetchFX() {
     try {
       const res = await fetch('https://open.er-api.com/v6/latest/USD', {
@@ -79,22 +69,16 @@ window.CrudeAPI = (function () {
   /**
    * parsePriceCache
    *
-   * Converts prices blob into the flat shape applyLivePrices() expects.
-   *
    * Blob shape (written by background function):
    *   { fetchedAt, prices: {
-   *       wti:      { id, name, unit, exchange, flag, latest:{price,timestamp}, history:[{period,value}], change, changePct },
-   *       brent:    { ... },
-   *       dubai:    { ... },
-   *       crude_ng: { ... },
-   *       hho:      { ... },
-   *       rbob:     { ... },
+   *       wti, brent, dubai, crude_ng, hho, rbob,   ← OilPriceAPI live
+   *       opec, urals, wcs, lco, bonny, espo         ← derived server-side
    *   }}
    *
-   * Output:
-   *   { wti, brent, dubai, natgas, rbob, heatoil }
-   *   each: { price, change, changePct, history:[{period,value}], source, name }
-   *   or null if no price for that contract.
+   * Each entry: { latest:{price,timestamp}, history:[{period,value}], change, changePct }
+   *
+   * Output keys used by applyLivePrices() in app.js:
+   *   wti, brent, dubai, natgas, rbob, heatoil, opec, urals, wcs, lco, bonny, espo
    */
   function parsePriceCache(blob) {
     const p = blob?.prices;
@@ -103,8 +87,7 @@ window.CrudeAPI = (function () {
     function extract(id) {
       const entry = p[id];
       if (!entry) return null;
-      // OilPriceAPI stores price as entry.latest.price
-      // EIA fallback stores price as entry.latest.value
+      // OilPriceAPI: latest.price  |  EIA fallback: latest.value
       const price = parseFloat(entry.latest?.price ?? entry.latest?.value ?? 0);
       if (!price || isNaN(price) || price <= 0) return null;
       const history = (entry.history || [])
@@ -121,13 +104,14 @@ window.CrudeAPI = (function () {
     }
 
     const result = {
+      // ── Live from OilPriceAPI ──────────────────────────────
       wti:     extract('wti'),
       brent:   extract('brent'),
       dubai:   extract('dubai'),
-      natgas:  extract('crude_ng'),
+      natgas:  extract('crude_ng'),   // blob key crude_ng → app key natgas
       rbob:    extract('rbob'),
-      heatoil: extract('hho'),
-      // Derived contracts — computed server-side from benchmarks
+      heatoil: extract('hho'),        // blob key hho → app key heatoil
+      // ── Derived server-side from benchmarks ───────────────
       opec:    extract('opec'),
       urals:   extract('urals'),
       wcs:     extract('wcs'),
@@ -136,13 +120,14 @@ window.CrudeAPI = (function () {
       espo:    extract('espo'),
     };
 
-    return Object.values(result).some(v => v !== null) ? result : null;
+    const found = Object.entries(result).filter(([,v]) => v !== null).map(([k]) => k);
+    console.log(`[CrudeAPI] parsePriceCache: ${found.length} contracts parsed — ${found.join(', ')}`);
+
+    return found.length > 0 ? result : null;
   }
 
   /**
    * parseEIACache
-   *
-   * Converts EIA blob into the flat shape applyEIACache() expects.
    */
   function parseEIACache(blob) {
     const e = blob?.eia;
@@ -164,8 +149,6 @@ window.CrudeAPI = (function () {
 
   /**
    * parseNewsCache
-   *
-   * Converts news blob into an array of normalised news items.
    */
   function parseNewsCache(blob) {
     if (!blob?.news?.length) return [];
@@ -186,8 +169,14 @@ window.CrudeAPI = (function () {
   // ── TELEGRAM ──────────────────────────────────────────────
 
   async function fetchTelegramMessages(limit = 20) {
-    const data = await getBlob('/api/oil-telegram');
-    return data?.messages?.length ? data.messages.slice(0, limit) : null;
+    try {
+      const res = await fetch('/api/oil-telegram', { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return null;
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) return null;
+      const data = await res.json();
+      return data?.messages?.length ? data.messages.slice(0, limit) : null;
+    } catch { return null; }
   }
 
   async function registerTelegramWebhook() {
