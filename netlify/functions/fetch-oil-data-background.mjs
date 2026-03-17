@@ -126,8 +126,8 @@ async function fetchText(url, timeoutMs = 15000) {
 // OILPRICE API
 // ══════════════════════════════════════════════════════════════
 // REPLACE WITH:
-async function fetchOilPriceLatest(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
+async function fetchOilPriceHistory(contract) {
+  const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.price) return null;
   const d = raw.data;
@@ -143,10 +143,18 @@ async function fetchOilPriceLatest(contract) {
 async function fetchOilPriceHistory(contract) {
   const url = `https://api.oilpriceapi.com/v1/prices/past_week?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
-  if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
-  return raw.data.prices
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    .map(p => ({ period: p.created_at.slice(0, 10), value: parseFloat(p.price) }));
+ if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
+  // Sort ascending, then deduplicate — keep last price per calendar day
+  const sorted = raw.data.prices
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const byDay = {};
+  sorted.forEach(p => {
+    const day = p.created_at.slice(0, 10); // YYYY-MM-DD
+    byDay[day] = parseFloat(p.price);      // last tick of the day wins
+  });
+  return Object.entries(byDay)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, value]) => ({ period, value }));
 }
 // ── DERIVED / COMPUTED PRICES ─────────────────────────────────
 // These contracts have no public API. We compute them from
