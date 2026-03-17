@@ -140,7 +140,67 @@ async function fetchOilPriceHistory(contract) {
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     .map(p => ({ period: p.created_at.slice(0, 10), value: parseFloat(p.price) }));
 }
+// ── DERIVED / COMPUTED PRICES ─────────────────────────────────
+// These contracts have no public API. We compute them from
+// benchmark prices using standard market differentials.
+// Differentials are updated periodically — these reflect
+// current market conditions (March 2026, Iran war premium).
+function computeDerivedPrices(prices) {
+  const brent = prices.brent?.latest?.price;
+  const wti   = prices.wti?.latest?.price;
+  if (!brent && !wti) return;
 
+  const brentHistory = prices.brent?.history || [];
+  const wtiHistory   = prices.wti?.history   || [];
+
+  function makeDerived(id, name, unit, exchange, flag, basePrice, differential, baseHistory, diffApplied) {
+    if (!basePrice) return;
+    const price      = parseFloat((basePrice + differential).toFixed(2));
+    const prevBase   = baseHistory.length >= 2 ? baseHistory[baseHistory.length - 2].value : null;
+    const prevPrice  = prevBase ? parseFloat((prevBase + differential).toFixed(2)) : null;
+    const change     = prevPrice ? parseFloat((price - prevPrice).toFixed(3)) : null;
+    const changePct  = prevPrice ? parseFloat(((price - prevPrice) / prevPrice * 100).toFixed(2)) : null;
+    // Build history by applying same differential to base history
+    const history = baseHistory.map(h => ({
+      period: h.period,
+      value:  parseFloat((h.value + differential).toFixed(2)),
+    }));
+    prices[id] = {
+      id, name, unit, exchange, flag,
+      latest:    { price, timestamp: new Date().toISOString() },
+      history,
+      change,
+      changePct,
+      derivedFrom: diffApplied,
+    };
+  }
+
+  // OPEC Basket — weighted avg of OPEC member crudes, tracks ~3% below Brent
+  makeDerived('opec',  'OPEC Basket',              'USD/bbl', 'OPEC', '🛢',
+    brent, brent ? -(brent * 0.03) : 0, brentHistory, 'Brent × 0.97');
+
+  // Urals — Russian Brent-linked crude, current war sanction discount
+  makeDerived('urals', 'Urals Crude',              'USD/bbl', 'OTC',  '🇷🇺',
+    brent, -13.50, brentHistory, 'Brent − $13.50');
+
+  // WCS — heavy sour Canadian crude, deep WTI discount
+  makeDerived('wcs',   'Western Canadian Select',  'USD/bbl', 'OTC',  '🇨🇦',
+    wti, -18.50, wtiHistory, 'WTI − $18.50');
+
+  // Low Sulphur Gasoil (ICE) — refined product, ~Brent + refinery margin
+  // Approximated: Brent × 8.75 bbl/MT conversion then add crack spread
+  // Displayed as USD/MT — typical value ~Brent * 8.9
+  makeDerived('lco',   'Low Sulphur Gasoil',       'USD/MT',  'ICE',  '🚢',
+    brent, brent ? (brent * 7.9) : 0, brentHistory, 'Brent × 8.9 (crack spread)');
+
+  // Bonny Light — Nigerian light sweet, premium to Brent
+  makeDerived('bonny', 'Bonny Light',              'USD/bbl', 'OTC',  '🇳🇬',
+    brent, 1.80, brentHistory, 'Brent + $1.80');
+
+  // ESPO Blend — Russian Pacific crude, smaller discount than Urals
+  makeDerived('espo',  'ESPO Blend',               'USD/bbl', 'OTC',  '🇷🇺',
+    brent, -4.50, brentHistory, 'Brent − $4.50');
+}
 // ══════════════════════════════════════════════════════════════
 // EIA
 // ══════════════════════════════════════════════════════════════
@@ -366,6 +426,9 @@ export default async function handler(req, context) {
       p.change    = parseFloat((curr - prev).toFixed(3));
       p.changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
     }
+
+    // Compute derived prices from benchmark data
+    computeDerivedPrices(prices);
 
     const live = Object.values(prices).filter(p => p.latest?.price);
     console.log(`[prices] Live: ${live.map(p => `${p.id}=$${p.latest.price}`).join(', ')}`);
