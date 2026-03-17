@@ -993,13 +993,22 @@
   function initStatsPage() {
     if (state.statsInitialized) return;
     state.statsInitialized = true;
-    if (typeof window.initEIStatsPage === 'function') window.initEIStatsPage();
+    // rAF ensures canvas is visible + has size before Chart.js measures it
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (typeof window.initEIStatsPage === 'function') window.initEIStatsPage();
+      });
+    });
   }
 
   function initCountryPage() {
     if (state.countryInitialized) return;
     state.countryInitialized = true;
-    if (typeof window.initEICountryPage === 'function') window.initEICountryPage();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (typeof window.initEICountryPage === 'function') window.initEICountryPage();
+      });
+    });
   }
 
   // ════════════════════════════════════════════════════════════
