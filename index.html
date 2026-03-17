@@ -392,25 +392,28 @@
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">Global Tanker Tracking</span>
-        <span class="live-badge">AIS FEED</span>
+        <span class="live-badge" id="tankers-ais-badge">AIS FEED</span>
       </div>
+      <!-- Fleet summary bar — all dynamic -->
       <div style="padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--border)">
-        Tracking <span style="color:var(--accent-orange)">4,218</span> active crude oil tankers globally · 
-        VLCC: <span style="color:var(--text-primary)">842</span> · 
-        Suezmax: <span style="color:var(--text-primary)">605</span> · 
-        Aframax: <span style="color:var(--text-primary)">980</span> · 
-        Panamax: <span style="color:var(--text-primary)">1,791</span>
+        Tracking <span style="color:var(--accent-orange)" id="ais-total-count">—</span> tankers ·
+        Underway: <span style="color:var(--accent-green)" id="ais-underway-count">—</span> ·
+        Anchored: <span style="color:var(--accent-amber)" id="ais-anchored-count">—</span> ·
+        VLCC: <span style="color:var(--text-primary)" id="ais-vlcc-count">—</span> ·
+        Suezmax: <span style="color:var(--text-primary)" id="ais-suezmax-count">—</span> ·
+        Aframax: <span style="color:var(--text-primary)" id="ais-aframax-count">—</span> ·
+        <span style="color:var(--text-dim)" id="ais-fetched-at"></span>
       </div>
       <div style="overflow-x:auto">
         <table class="data-table">
           <thead>
             <tr>
               <th>Vessel Name</th>
-              <th>Type / Flag</th>
+              <th>Class / Flag</th>
               <th>From</th>
               <th>Destination</th>
               <th>Position</th>
-              <th>Speed</th>
+              <th>Speed / HDG</th>
               <th>Status</th>
               <th>ETA</th>
             </tr>
@@ -420,38 +423,74 @@
       </div>
     </div>
 
-    <!-- Route stats -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:0">
+    <!-- Route stats — all dynamic from AIS data -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px">
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">Middle East → Asia</span></div>
+        <div class="panel-header"><span class="panel-title">🛢 Middle East → Asia</span></div>
         <div class="panel-body">
-          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">1,842</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 142 week-over-week</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="route-me-asia">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px" id="route-me-asia-detail">tankers en route</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">PG / Red Sea → China / Korea / Japan</div>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">Middle East → Europe</span></div>
+        <div class="panel-header"><span class="panel-title">🛢 Middle East → Europe</span></div>
         <div class="panel-body">
-          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">680</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-red);margin-top:4px">▼ 23 week-over-week</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="route-me-europe">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px" id="route-me-europe-detail">tankers en route</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">PG / Red Sea → Med / N.Sea</div>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">Americas → Europe</span></div>
+        <div class="panel-header"><span class="panel-title">🛢 Americas → Europe</span></div>
         <div class="panel-body">
-          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)">412</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 34 week-over-week</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">tankers en route</div>
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="route-am-europe">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px" id="route-am-europe-detail">tankers en route</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">Gulf of Mexico / US East → Europe</div>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">Avg. VLCC Rate</span></div>
+        <div class="panel-header"><span class="panel-title">⚡ Avg Speed (Underway)</span></div>
         <div class="panel-body">
-          <div style="font-family:var(--font-display);font-size:28px;color:var(--accent-orange)">$48.2k</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:4px">▲ 12.4% on week</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">per day / spot</div>
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--accent-orange)" id="ais-avg-speed">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px" id="ais-avg-speed-detail">knots average</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">underway vessels only</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Second row of stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">🗺 Persian Gulf</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="zone-pg">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px">vessels in zone</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">21°N–30°N / 50°E–60°E</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">🗺 Red Sea / Gulf of Aden</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="zone-redsea">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px">vessels in zone</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">10°N–25°N / 40°E–55°E</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">🗺 Strait of Malacca</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="zone-malacca">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px">vessels in zone</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">1°N–6°N / 100°E–105°E</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">🗺 North Sea</span></div>
+        <div class="panel-body">
+          <div style="font-family:var(--font-display);font-size:28px;color:var(--text-bright)" id="zone-northsea">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px">vessels in zone</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">51°N–62°N / -5°E–10°E</div>
         </div>
       </div>
     </div>
