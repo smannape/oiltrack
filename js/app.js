@@ -35,6 +35,7 @@
     renderPriceGrid();
     renderNewsPanel([]);
     renderTankersTable(CrudeRadar.tankers);
+    updateTankerStats(CrudeRadar.tankers, 0);
     renderProductionTable();
     setupNavigation();
     setupAuth();
@@ -120,7 +121,6 @@
   function applyLiveTankers(tankers) {
     if (!tankers?.length) return;
 
-    // Normalise field names — AISstream uses different casing than static data
     const normalised = tankers.map(t => ({
       mmsi:        String(t.mmsi || ''),
       name:        t.name        || 'UNKNOWN',
@@ -141,11 +141,12 @@
       stale:       t.stale       || false,
     }));
 
-    const liveTankers = normalised.filter(t => !t.stale);
+    const liveTankers  = normalised.filter(t => !t.stale);
     const staleTankers = normalised.filter(t => t.stale);
 
     CrudeRadar.tankers = normalised;
     renderTankersTable(normalised);
+    updateTankerStats(normalised, liveTankers.length);
     if (state.mapMode === 'tankers') renderMapMode('tankers');
 
     const badge = liveTankers.length > 0
@@ -153,6 +154,114 @@
       : 'AIS CACHED';
     setStatusBadge('api-status-tankers', liveTankers.length > 0 ? 'live' : 'demo', badge);
     console.log(`[CrudeRadar] AIS: ${liveTankers.length} live, ${staleTankers.length} cached`);
+  }
+
+  // ── TANKER STATS ─────────────────────────────────────────
+  // Computes all stats dynamically from AIS vessel array.
+  // Uses position (lat/lng) and destination keyword matching.
+  function updateTankerStats(tankers, liveCount) {
+    if (!tankers?.length) return;
+
+    // ── Fleet composition ─────────────────────────────────
+    const total    = tankers.length;
+    const underway = tankers.filter(t => t.status === 'underway').length;
+    const anchored = tankers.filter(t => t.status === 'anchored' || t.status === 'moored').length;
+
+    const classCount = (cls) => tankers.filter(t =>
+      (t.type || '').toUpperCase().includes(cls.toUpperCase())
+    ).length;
+
+    setText('ais-total-count',    total);
+    setText('ais-underway-count', underway);
+    setText('ais-anchored-count', anchored);
+    setText('ais-vlcc-count',     classCount('VLCC'));
+    setText('ais-suezmax-count',  classCount('Suezmax'));
+    setText('ais-aframax-count',  classCount('Aframax'));
+
+    // Fetch timestamp
+    if (liveCount > 0) {
+      setText('ais-fetched-at', `Live · ${liveCount} AIS positions`);
+    } else {
+      setText('ais-fetched-at', 'Cached positions');
+    }
+
+    // ── Zone detection (by lat/lng bounding boxes) ────────
+    function inBox(t, latMin, latMax, lngMin, lngMax) {
+      return t.lat >= latMin && t.lat <= latMax && t.lng >= lngMin && t.lng <= lngMax;
+    }
+
+    const zonePG       = tankers.filter(t => inBox(t, 21, 30,  50, 60)).length;
+    const zoneRedSea   = tankers.filter(t => inBox(t, 10, 25,  40, 55)).length;
+    const zoneMalacca  = tankers.filter(t => inBox(t,  1,  6, 100,105)).length;
+    const zoneNorthSea = tankers.filter(t => inBox(t, 51, 62,  -5, 10)).length;
+
+    setText('zone-pg',       zonePG);
+    setText('zone-redsea',   zoneRedSea);
+    setText('zone-malacca',  zoneMalacca);
+    setText('zone-northsea', zoneNorthSea);
+
+    // ── Route detection (by position + destination) ───────
+    // Middle East origin: vessel in Persian Gulf or Red Sea bounding box
+    // OR destination keywords suggest Middle East origin
+    const ME_ORIGIN_LAT_MIN = 10, ME_ORIGIN_LAT_MAX = 30;
+    const ME_ORIGIN_LNG_MIN = 40, ME_ORIGIN_LNG_MAX = 60;
+
+    const ASIA_DEST  = ['china','korea','japan','singapore','taiwan','india','thailand','vietnam','indonesia','ningbo','tianjin','qingdao','ulsan','busan','jurong','chennai','mundra'];
+    const EU_DEST    = ['rotterdam','amsterdam','antwerp','hamburg','rotterdam','marseille','trieste','genoa','barcelona','italy','spain','france','germany','netherlands','uk','london','liverpool','gothenburg'];
+    const AM_ORIGIN_LNG_MIN = -100, AM_ORIGIN_LNG_MAX = -60;
+    const AM_ORIGIN_LAT_MIN = 15,   AM_ORIGIN_LAT_MAX = 50;
+
+    function destMatch(t, keywords) {
+      const d = (t.destination || t.to || '').toLowerCase();
+      return keywords.some(k => d.includes(k));
+    }
+
+    function inME(t) {
+      return inBox(t, ME_ORIGIN_LAT_MIN, ME_ORIGIN_LAT_MAX, ME_ORIGIN_LNG_MIN, ME_ORIGIN_LNG_MAX);
+    }
+    function inAmericas(t) {
+      return inBox(t, AM_ORIGIN_LAT_MIN, AM_ORIGIN_LAT_MAX, AM_ORIGIN_LNG_MIN, AM_ORIGIN_LNG_MAX);
+    }
+
+    // ME → Asia: vessel from ME region heading to Asian port
+    const meToAsia = tankers.filter(t =>
+      t.status === 'underway' && (inME(t) || destMatch(t, ASIA_DEST)) &&
+      destMatch(t, ASIA_DEST)
+    ).length;
+
+    // ME → Europe: vessel from ME region heading to European port
+    const meToEurope = tankers.filter(t =>
+      t.status === 'underway' && (inME(t) || destMatch(t, EU_DEST)) &&
+      destMatch(t, EU_DEST)
+    ).length;
+
+    // Americas → Europe: vessel from Atlantic heading east to Europe
+    const amToEurope = tankers.filter(t =>
+      t.status === 'underway' && inAmericas(t) && destMatch(t, EU_DEST)
+    ).length;
+
+    // Average speed of underway vessels
+    const underwayVessels = tankers.filter(t => t.status === 'underway' && parseFloat(t.speed) > 0.5);
+    const avgSpeed = underwayVessels.length > 0
+      ? (underwayVessels.reduce((sum, t) => sum + parseFloat(t.speed), 0) / underwayVessels.length).toFixed(1)
+      : '—';
+
+    setText('route-me-asia',    meToAsia   || '—');
+    setText('route-me-europe',  meToEurope || '—');
+    setText('route-am-europe',  amToEurope || '—');
+    setText('ais-avg-speed',    avgSpeed + (avgSpeed !== '—' ? ' kn' : ''));
+
+    // Detail lines
+    const vlccUnderway = tankers.filter(t => t.status === 'underway' && (t.type||'').includes('VLCC')).length;
+    setText('route-me-asia-detail',   `${tankers.filter(t => destMatch(t, ASIA_DEST)).length} with Asian destination`);
+    setText('route-me-europe-detail', `${tankers.filter(t => destMatch(t, EU_DEST)).length} with European destination`);
+    setText('route-am-europe-detail', `${inAmericas.length || amToEurope} Atlantic crossings`);
+    setText('ais-avg-speed-detail',   `${underwayVessels.length} vessels underway`);
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(val);
   }
 
   // ── APPLY LIVE PRICES ────────────────────────────────────
