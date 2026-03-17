@@ -80,6 +80,7 @@
     <a href="#" data-page="tankers">Tankers</a>
     <a href="#" data-page="charts">Charts</a>
     <a href="#" data-page="stats">Statistics</a>
+    <a href="#" data-page="country">Country Drilldown</a>
     <a href="#" data-page="news">News</a>
     <a href="#" onclick="toggleApiConfig(event)" style="color:var(--accent-amber)">⚙ API Keys</a>
   </nav>
@@ -601,99 +602,202 @@
 
 <!-- ===== PAGE: STATISTICS ===== -->
 <div id="page-stats" class="page">
-  <!-- KPI Row -->
-  <div class="stat-kpi-row">
-    <div class="kpi-card">
-      <div class="kpi-label">Global Production</div>
-      <div class="kpi-value">101.8</div>
-      <div class="kpi-sub">Million barrels/day</div>
-      <div class="kpi-change" style="color:var(--accent-green)">▲ +0.9% YoY</div>
+
+  <!-- ── Global KPIs ─────────────────────────────────────── -->
+  <div class="ei-section-hdr">Global Energy Overview — 2023 (EI Statistical Review)</div>
+  <div class="ei-kpi-grid">
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Oil Production</div>
+      <div class="ei-kpi-val" id="ei-oil-prod">96.3</div>
+      <div class="ei-kpi-unit">million bbl/day</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +2.1% vs 2022</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Global Consumption</div>
-      <div class="kpi-value">103.5</div>
-      <div class="kpi-sub">Million barrels/day</div>
-      <div class="kpi-change" style="color:var(--accent-green)">▲ +1.0% YoY (IEA)</div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Gas Production</div>
+      <div class="ei-kpi-val" id="ei-gas-prod">4,064</div>
+      <div class="ei-kpi-unit">billion cubic metres</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +0.3% vs 2022</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">OPEC Production</div>
-      <div class="kpi-value">26.4</div>
-      <div class="kpi-sub">Mb/d · 25.9% global share</div>
-      <div class="kpi-change" style="color:var(--accent-red)">▼ -0.8% (cuts active)</div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">CO₂ Emissions</div>
+      <div class="ei-kpi-val" id="ei-co2">35,024</div>
+      <div class="ei-kpi-unit">million tonnes</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-red)">▲ +1.2% vs 2022</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Proven Reserves</div>
-      <div class="kpi-value">1,733</div>
-      <div class="kpi-sub">Billion barrels (total)</div>
-      <div class="kpi-change" style="color:var(--text-dim)">OPEC: 71.6% share</div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Electricity Generated</div>
+      <div class="ei-kpi-val" id="ei-elec">29,963</div>
+      <div class="ei-kpi-unit">terawatt-hours</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +2.6% vs 2022</div>
+    </div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Renewables Supply</div>
+      <div class="ei-kpi-val" id="ei-ren">45.3</div>
+      <div class="ei-kpi-unit">exajoules</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +5.4% vs 2022</div>
+    </div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Solar Capacity</div>
+      <div class="ei-kpi-val" id="ei-solar">1,414</div>
+      <div class="ei-kpi-unit">gigawatts installed</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +33% vs 2022</div>
+    </div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Wind Capacity</div>
+      <div class="ei-kpi-val" id="ei-wind">1,020</div>
+      <div class="ei-kpi-unit">gigawatts installed</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +13% vs 2022</div>
+    </div>
+    <div class="ei-kpi">
+      <div class="ei-kpi-label">Nuclear Generation</div>
+      <div class="ei-kpi-val" id="ei-nuclear">2,738</div>
+      <div class="ei-kpi-unit">terawatt-hours</div>
+      <div class="ei-kpi-delta" style="color:var(--accent-green)">▲ +2.2% vs 2022</div>
     </div>
   </div>
 
-  <div class="stats-grid">
-    <!-- Prod vs Cons -->
-    <div class="panel" style="grid-column:1/-1">
-      <div class="panel-header">
-        <span class="panel-title">Global Production vs Consumption (2019–2025)</span>
-        <span class="panel-meta">Source: IEA / BP Statistical Review / OPEC</span>
-      </div>
-      <div style="height:280px;padding:12px"><canvas id="chart-prod-vs-cons"></canvas></div>
+  <!-- ── Production & Prices ───────────────────────────────── -->
+  <div class="ei-section-hdr">Oil — Production, Consumption & Prices</div>
+  <div class="ei-two">
+    <div class="res-panel">
+      <div class="res-panel-title">World Oil Production vs Consumption (Mbbl/d)</div>
+      <div style="height:180px;position:relative"><canvas id="ei-chart-oil-prodcons"></canvas></div>
     </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Spot Crude Prices — Annual Average ($/bbl)</div>
+      <div style="height:180px;position:relative"><canvas id="ei-chart-prices"></canvas></div>
+    </div>
+  </div>
 
-    <!-- OPEC Doughnut -->
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Production Share by Country</span>
-        <span class="panel-meta">2025 Estimate · Mb/d</span>
-      </div>
-      <div style="height:300px;padding:12px"><canvas id="chart-opec-share"></canvas></div>
+  <!-- ── Gas / Coal / Electricity ─────────────────────────── -->
+  <div class="ei-section-hdr">Natural Gas · Coal · Electricity</div>
+  <div class="ei-three">
+    <div class="res-panel">
+      <div class="res-panel-title">Gas Production vs Consumption (Bcm)</div>
+      <div style="height:150px;position:relative"><canvas id="ei-chart-gas"></canvas></div>
     </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Coal Production (EJ)</div>
+      <div style="height:150px;position:relative"><canvas id="ei-chart-coal"></canvas></div>
+    </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Electricity Generation (TWh)</div>
+      <div style="height:150px;position:relative"><canvas id="ei-chart-elec"></canvas></div>
+    </div>
+  </div>
 
-    <!-- Consumption bar -->
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Top 10 Consumers</span>
-        <span class="panel-meta">2025 · Mb/d</span>
-      </div>
-      <div style="height:300px;padding:12px"><canvas id="chart-consumption"></canvas></div>
+  <!-- ── Renewables & CO2 ──────────────────────────────────── -->
+  <div class="ei-section-hdr">Renewables Capacity & CO₂ Emissions</div>
+  <div class="ei-two">
+    <div class="res-panel">
+      <div class="res-panel-title">Solar & Wind Installed Capacity (GW)</div>
+      <div style="height:160px;position:relative"><canvas id="ei-chart-renew-cap"></canvas></div>
     </div>
+    <div class="res-panel">
+      <div class="res-panel-title">CO₂ from Energy (Mt) · Nuclear Generation (TWh)</div>
+      <div style="height:160px;position:relative"><canvas id="ei-chart-co2-nuclear"></canvas></div>
+    </div>
+  </div>
 
-    <!-- OPEC Members table -->
-    <div class="panel" style="grid-column:1/-1">
-      <div class="panel-header">
-        <span class="panel-title">OPEC+ Member Production Summary</span>
-        <span class="panel-meta">Latest available · August 2025</span>
-      </div>
-      <div style="overflow-x:auto">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Country</th>
-              <th>Quota (Mb/d)</th>
-              <th>Actual (Mb/d)</th>
-              <th>Compliance</th>
-              <th>Proven Reserves (Gb)</th>
-              <th>R/P Ratio (yrs)</th>
-              <th>Org.</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td>Saudi Arabia</td><td>9.8</td><td>10.5</td><td class="down">107%</td><td>265.9</td><td>69.5</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Russia</td><td>10.5</td><td>10.8</td><td class="down">103%</td><td>107.8</td><td>27.4</td><td><span class="tag">OPEC+</span></td></tr>
-            <tr><td>Iraq</td><td>4.2</td><td>4.6</td><td class="down">110%</td><td>145.0</td><td>86.3</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>UAE</td><td>3.0</td><td>4.1</td><td class="down">137%</td><td>97.8</td><td>65.2</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Kuwait</td><td>2.7</td><td>2.9</td><td class="down">107%</td><td>101.5</td><td>95.7</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Iran</td><td>—</td><td>3.4</td><td class="neutral">Exempt</td><td>208.6</td><td>168.1</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Kazakhstan</td><td>1.7</td><td>1.9</td><td class="down">112%</td><td>30.0</td><td>43.3</td><td><span class="tag">OPEC+</span></td></tr>
-            <tr><td>Nigeria</td><td>1.5</td><td>1.5</td><td class="up">100%</td><td>36.9</td><td>67.3</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Venezuela</td><td>0.8</td><td>0.9</td><td class="up">113%</td><td>303.8</td><td>924</td><td><span class="tag">OPEC</span></td></tr>
-            <tr><td>Libya</td><td>—</td><td>1.2</td><td class="neutral">Exempt</td><td>48.4</td><td>110.4</td><td><span class="tag">OPEC</span></td></tr>
-          </tbody>
-        </table>
+  <!-- ── PROVED RESERVES ───────────────────────────────────── -->
+  <div class="ei-section-hdr">Proved Reserves — Oil · Natural Gas · Coal</div>
+  <div class="ei-subtabs" id="res-subtabs">
+    <button class="ei-subtab active" data-res="oil">Oil (Gbbl)</button>
+    <button class="ei-subtab" data-res="gas">Natural Gas (Tcm)</button>
+    <button class="ei-subtab" data-res="coal">Coal (Mt)</button>
+  </div>
+
+  <!-- Reserves content panels -->
+  <div id="res-panel-oil" class="ei-two" style="margin-top:4px">
+    <div class="res-panel">
+      <div class="res-panel-title">Top 15 Countries — Oil Proved Reserves (Gbbl, 2020)</div>
+      <div id="oil-res-bars"></div>
+    </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Regional Distribution — Oil Reserves</div>
+      <div class="ei-stacked-bar" id="oil-res-stacked" style="margin-bottom:10px"></div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:10px">1,732 Gbbl total world proved reserves (2020)</div>
+      <div id="oil-res-regional"></div>
+      <div style="margin-top:10px;padding:8px;background:var(--bg-deep);font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">
+        R/P Ratio: Venezuela 1,538 yrs · Kuwait 93 yrs · Saudi Arabia 66 yrs · US 11 yrs
       </div>
     </div>
+  </div>
+
+  <div id="res-panel-gas" class="ei-two" style="margin-top:4px;display:none">
+    <div class="res-panel">
+      <div class="res-panel-title">Top 15 Countries — Gas Proved Reserves (Tcm, 2020)</div>
+      <div id="gas-res-bars"></div>
+    </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Gas Reserves Share by Region</div>
+      <div style="height:200px;position:relative"><canvas id="ei-chart-gas-res-donut"></canvas></div>
+      <div style="margin-top:10px;padding:8px;background:var(--bg-deep);font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">
+        Total: 188.1 Tcm world proved reserves (2020)
+      </div>
+    </div>
+  </div>
+
+  <div id="res-panel-coal" class="ei-two" style="margin-top:4px;display:none">
+    <div class="res-panel">
+      <div class="res-panel-title">Top 15 Countries — Coal Proved Reserves (Mt, 2020)</div>
+      <div id="coal-res-bars"></div>
+    </div>
+    <div class="res-panel">
+      <div class="res-panel-title">Coal Reserves Share by Country</div>
+      <div style="height:200px;position:relative"><canvas id="ei-chart-coal-res-donut"></canvas></div>
+      <div style="margin-top:10px;padding:8px;background:var(--bg-deep);font-family:var(--font-mono);font-size:10px;color:var(--text-dim)">
+        Total: 1,074,108 Mt world proved reserves (2020)
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:6px 14px 14px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)">
+    Source: Energy Institute Statistical Review of World Energy 2024 · Data coverage 1965–2024
   </div>
 </div>
 
+<!-- ===== PAGE: COUNTRY DRILLDOWN ===== -->
+<div id="page-country" class="page">
+  <div class="cd-selector-bar">
+    <span class="cd-selector-label">Country</span>
+    <div class="cd-country-list" id="cd-country-list"></div>
+  </div>
+
+  <div class="cd-body">
+    <!-- KPIs -->
+    <div class="cd-kpi4" id="cd-kpis">
+      <div class="cd-kpi"><div class="cd-kpi-label">Oil Production</div><div class="cd-kpi-val" id="cd-kv-prod">—</div><div class="cd-kpi-unit" id="cd-ku-prod"></div><div class="cd-kpi-delta" id="cd-kd-prod"></div></div>
+      <div class="cd-kpi"><div class="cd-kpi-label">Crude Exports</div><div class="cd-kpi-val" id="cd-kv-exp">—</div><div class="cd-kpi-unit" id="cd-ku-exp"></div><div class="cd-kpi-delta" id="cd-kd-exp"></div></div>
+      <div class="cd-kpi"><div class="cd-kpi-label">Oil Reserves</div><div class="cd-kpi-val" id="cd-kv-res">—</div><div class="cd-kpi-unit" id="cd-ku-res"></div><div class="cd-kpi-delta" id="cd-kd-res"></div></div>
+      <div class="cd-kpi"><div class="cd-kpi-label">Gas Production</div><div class="cd-kpi-val" id="cd-kv-gas">—</div><div class="cd-kpi-unit" id="cd-ku-gas"></div><div class="cd-kpi-delta" id="cd-kd-gas"></div></div>
+    </div>
+
+    <!-- Sankey -->
+    <div class="sankey-panel">
+      <div class="sankey-panel-title" id="sankey-title">Crude Oil Export Trade Flows — 2024</div>
+      <div class="sankey-panel-sub" id="sankey-sub">Producer → Destination region (crude only, million tonnes)</div>
+      <div id="sankey-svg-wrap"></div>
+      <div id="sankey-legend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)"></div>
+    </div>
+
+    <!-- Bottom charts -->
+    <div class="cd-bottom-grid">
+      <div class="cd-panel">
+        <div class="cd-panel-title" id="cd-hist-title">Production History (kbd)</div>
+        <div style="height:160px;position:relative"><canvas id="cd-chart-hist"></canvas></div>
+      </div>
+      <div class="cd-panel">
+        <div class="cd-panel-title">Export Destination Mix — 2024 (crude Mt)</div>
+        <div id="cd-dest-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sankey-tooltip" class="sankey-tooltip"></div>
+</div>
+
+<!-- ===== PAGE: NEWS ===== -->
 <!-- ===== PAGE: NEWS ===== -->
 <div id="page-news" class="page">
   <div style="padding:12px;max-width:900px;margin:0 auto">
@@ -757,7 +861,9 @@
 
 <!-- ===== SCRIPTS ===== -->
 <script src="js/data.js"></script>
+<script src="js/ei_stats_data.js"></script>
   <script src="js/api.js"></script>
+<script src="js/ei_stats_page.js"></script>
 <script src="js/app.js"></script>
 <script>
   // Populate full news page on load
