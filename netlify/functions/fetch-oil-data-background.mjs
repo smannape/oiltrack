@@ -1,23 +1,23 @@
 // ============================================================
 // netlify/functions/fetch-oil-data-background.mjs
 //
-// BACKGROUND FUNCTION (Netlify Pro) — up to 15 min execution.
-// Triggered every hour by scheduled-refresh.mjs.
-// Also callable manually: POST /api/oil-refresh
+// Netlify Pro Background Function — up to 15 min execution.
+// Triggered hourly by scheduled-refresh.mjs.
+// Also: POST /api/oil-refresh for manual trigger.
 //
 // Fetches:
-//   1. OilPriceAPI  — live spot prices + 30-day history
-//   2. EIA Open Data — 11 series (stocks, production, OPEC)
-//   3. RSS feeds    — OPEC, IEA, OilPrice.com, Rigzone, Platts, NGI
-//   4. GNews API    — oil/energy news (if key set)
-//   5. Datalastic   — AIS tanker positions (if key set)
+//   1. OilPriceAPI  — live spot prices + 30-day daily history
+//   2. EIA Open Data — 8 series (stocks, production, prices)
+//   3. RSS feeds    — OilPrice.com, Rigzone, NGI, Offshore Tech
+//   4. GNews        — oil/energy news (if GNEWS_API_KEY set)
+//   5. Datalastic   — AIS tanker positions (if DATALASTIC_API_KEY set)
 //
-// Writes Netlify Blobs in store 'crude-radar':
-//   'prices'  — { fetchedAt, prices: { wti:{...}, brent:{...}, ... } }
-//   'news'    — { fetchedAt, news: [...] }
-//   'eia'     — { fetchedAt, eia: { us_crude_stocks:{...}, ... } }
-//   'tankers' — { fetchedAt, tankers: [...] }
-//   'meta'    — { fetchedAt, duration_ms, counts, errors }
+// Writes Netlify Blobs (store: 'crude-radar'):
+//   prices  — all 12 contracts (6 live + 6 derived)
+//   news    — merged deduplicated articles
+//   eia     — EIA inventory + production series
+//   tankers — AIS vessel positions
+//   meta    — run stats, timestamps, errors
 // ============================================================
 
 import { getStore } from '@netlify/blobs';
@@ -40,19 +40,17 @@ const PRICE_CONTRACTS = [
 
 // ── EIA SERIES ────────────────────────────────────────────────
 const EIA_SERIES = [
-  { id: 'PET.WCRSTUS1.W',         key: 'us_crude_stocks',     freq: 'weekly',  length: 104 },
-  { id: 'PET.WGTSTUS1.W',         key: 'us_gasoline_stocks',  freq: 'weekly',  length: 52  },
-  { id: 'PET.WDISTUS1.W',         key: 'us_distillate',       freq: 'weekly',  length: 52  },
-  { id: 'PET.WCRRIUS2.W',         key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
-  { id: 'PET.MCRFPUS2.M',         key: 'us_field_production', freq: 'monthly', length: 60  },
-  { id: 'PET.RWTC.M',             key: 'wti_spot_monthly',    freq: 'monthly', length: 60  },
-  { id: 'PET.RBRTE.M',            key: 'brent_spot_monthly',  freq: 'monthly', length: 60  },
-  { id: 'NG.RNGWHHD.D',           key: 'henry_hub_daily',     freq: 'daily',   length: 90  },
+  { id: 'PET.WCRSTUS1.W',   key: 'us_crude_stocks',     freq: 'weekly',  length: 104 },
+  { id: 'PET.WGTSTUS1.W',   key: 'us_gasoline_stocks',  freq: 'weekly',  length: 52  },
+  { id: 'PET.WDISTUS1.W',   key: 'us_distillate',       freq: 'weekly',  length: 52  },
+  { id: 'PET.WCRRIUS2.W',   key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
+  { id: 'PET.MCRFPUS2.M',   key: 'us_field_production', freq: 'monthly', length: 60  },
+  { id: 'PET.RWTC.M',       key: 'wti_spot_monthly',    freq: 'monthly', length: 60  },
+  { id: 'PET.RBRTE.M',      key: 'brent_spot_monthly',  freq: 'monthly', length: 60  },
+  { id: 'NG.RNGWHHD.D',     key: 'henry_hub_daily',     freq: 'daily',   length: 90  },
 ];
 
-// ── RSS FEEDS ─────────────────────────────────────────────────
-// REPLACE WITH:
-// REPLACE the full RSS_FEEDS array with just the 5 that work:
+// ── RSS FEEDS (confirmed working) ────────────────────────────
 const RSS_FEEDS = [
   { url: 'https://oilprice.com/rss/main',                        source: 'OilPrice.com',  tag: 'MARKET' },
   { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx', source: 'Rigzone',       tag: 'SUPPLY' },
@@ -76,7 +74,7 @@ const TRACKED_TANKERS = [
 // ══════════════════════════════════════════════════════════════
 // HTTP HELPERS
 // ══════════════════════════════════════════════════════════════
-// REPLACE WITH:
+
 async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -84,22 +82,16 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'Accept': 'application/json', ...headers },
       });
-      // REPLACE WITH:
-      if (!res.ok) {
-        // Don't retry 404s — the resource doesn't exist
-        if (res.status === 404) {
-          console.warn(`[fetchJSON] 404 (no retry): ${url.slice(0, 90)}`);
-          return null;
-        }
-        throw new Error(`HTTP ${res.status}`);
+      // Don't retry 404s — resource doesn't exist
+      if (res.status === 404) {
+        console.warn(`[fetchJSON] 404 (no retry): ${url.slice(0, 90)}`);
+        return null;
       }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
       console.warn(`[fetchJSON] attempt ${attempt}/${retries}: ${url.slice(0, 90)} → ${e.message}`);
-      if (attempt < retries) {
-        // Wait before retry: 2s, 4s, 8s
-        await new Promise(r => setTimeout(r, 2000 * attempt));
-      }
+      if (attempt < retries) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }
   return null;
@@ -125,115 +117,42 @@ async function fetchText(url, timeoutMs = 15000) {
 // ══════════════════════════════════════════════════════════════
 // OILPRICE API
 // ══════════════════════════════════════════════════════════════
-// REPLACE WITH:
-async function fetchOilPriceHistory(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
+
+async function fetchOilPriceLatest(contract) {
+  const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.price) return null;
   const d = raw.data;
   return {
     price:     parseFloat(d.price),
     timestamp: d.created_at,
-    // OilPriceAPI returns 24h change data — use it directly
-    change:    d.changes?.['24h']?.amount    ?? null,
-    changePct: d.changes?.['24h']?.percent   ?? null,
+    // OilPriceAPI returns 24h change data directly
+    change:    d.changes?.['24h']?.amount  ?? null,
+    changePct: d.changes?.['24h']?.percent ?? null,
   };
 }
 
 async function fetchOilPriceHistory(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/past_week?by_code=${contract.code}`;
+  const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
- if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
-  // Sort ascending, then deduplicate — keep last price per calendar day
+  if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
+  // Sort ascending then deduplicate — keep last price per calendar day
   const sorted = raw.data.prices
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const byDay = {};
   sorted.forEach(p => {
     const day = p.created_at.slice(0, 10); // YYYY-MM-DD
-    byDay[day] = parseFloat(p.price);      // last tick of the day wins
+    byDay[day] = parseFloat(p.price);      // last tick of day wins
   });
   return Object.entries(byDay)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([period, value]) => ({ period, value }));
 }
-// ── DERIVED / COMPUTED PRICES ─────────────────────────────────
-// These contracts have no public API. We compute them from
-// benchmark prices using standard market differentials.
-// Differentials are updated periodically — these reflect
-// current market conditions (March 2026, Iran war premium).
-function computeDerivedPrices(prices) {
-  const brent = prices.brent?.latest?.price;
-  const wti   = prices.wti?.latest?.price;
-  if (!brent && !wti) return;
 
-  const brentHistory = prices.brent?.history || [];
-  const wtiHistory   = prices.wti?.history   || [];
-
-  function makeDerived(id, name, unit, exchange, flag, basePrice, differential, baseHistory, diffApplied) {
-    if (!basePrice) return;
-    const price      = parseFloat((basePrice + differential).toFixed(2));
-    const prevBase   = baseHistory.length >= 2 ? baseHistory[baseHistory.length - 2].value : null;
-    const prevPrice  = prevBase ? parseFloat((prevBase + differential).toFixed(2)) : null;
-    const change     = prevPrice ? parseFloat((price - prevPrice).toFixed(3)) : null;
-    const changePct  = prevPrice ? parseFloat(((price - prevPrice) / prevPrice * 100).toFixed(2)) : null;
-    // Build history by applying same differential to base history
-    const history = baseHistory.map(h => ({
-      period: h.period,
-      value:  parseFloat((h.value + differential).toFixed(2)),
-    }));
-    prices[id] = {
-      id, name, unit, exchange, flag,
-      latest:    { price, timestamp: new Date().toISOString() },
-      history,
-      change,
-      changePct,
-      derivedFrom: diffApplied,
-    };
-  }
-
-  
-// REPLACE WITH:
-  // OPEC Basket — fixed differential below Brent (historically $2-4 below)
-  makeDerived('opec',  'OPEC Basket',              'USD/bbl', 'OPEC', '🛢',
-    brent, -3.00, brentHistory, 'Brent − $3.00');
-
-  // Urals — Russian Brent-linked crude, current war sanction discount
-  makeDerived('urals', 'Urals Crude',              'USD/bbl', 'OTC',  '🇷🇺',
-    brent, -13.50, brentHistory, 'Brent − $13.50');
-
-  // WCS — heavy sour Canadian crude, deep WTI discount
-  makeDerived('wcs',   'Western Canadian Select',  'USD/bbl', 'OTC',  '🇨🇦',
-    wti, -18.50, wtiHistory, 'WTI − $18.50');
-
-  // REPLACE WITH:
-  // Low Sulphur Gasoil — ICE Gasoil futures, USD/MT
-  // Converted from per-barrel: (Brent × 7.45 barrels/MT) + $15 crack spread
-  // makeDerived uses basePrice + differential, so we pass 0 as base and full calc as diff
-  if (brent) {
-    const lcoPrice   = parseFloat((brent * 7.45 + 15).toFixed(2));
-    const prevBrent  = brentHistory.length >= 2 ? brentHistory[brentHistory.length - 2].value : null;
-    const prevLco    = prevBrent ? parseFloat((prevBrent * 7.45 + 15).toFixed(2)) : null;
-    prices['lco'] = {
-      id: 'lco', name: 'Low Sulphur Gasoil', unit: 'USD/MT', exchange: 'ICE', flag: '🚢',
-      latest:    { price: lcoPrice, timestamp: new Date().toISOString() },
-      history:   brentHistory.map(h => ({ period: h.period, value: parseFloat((h.value * 7.45 + 15).toFixed(2)) })),
-      change:    prevLco ? parseFloat((lcoPrice - prevLco).toFixed(2)) : null,
-      changePct: prevLco ? parseFloat(((lcoPrice - prevLco) / prevLco * 100).toFixed(2)) : null,
-      derivedFrom: 'Brent × 7.45 + $15',
-    };
-  }
-
-  // Bonny Light — Nigerian light sweet, premium to Brent
-  makeDerived('bonny', 'Bonny Light',              'USD/bbl', 'OTC',  '🇳🇬',
-    brent, 1.80, brentHistory, 'Brent + $1.80');
-
-  // ESPO Blend — Russian Pacific crude, smaller discount than Urals
-  makeDerived('espo',  'ESPO Blend',               'USD/bbl', 'OTC',  '🇷🇺',
-    brent, -4.50, brentHistory, 'Brent − $4.50');
-}
 // ══════════════════════════════════════════════════════════════
 // EIA
 // ══════════════════════════════════════════════════════════════
+
 async function fetchEIASeries(s) {
   if (!EIA_KEY) return null;
   const url = `https://api.eia.gov/v2/seriesid/${s.id}?api_key=${EIA_KEY}&length=${s.length}&sort[0][column]=period&sort[0][direction]=desc`;
@@ -254,8 +173,9 @@ async function fetchEIASeries(s) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// RSS — direct fetch + native XML parse (no rss2json.com)
+// RSS — direct fetch + native XML parser
 // ══════════════════════════════════════════════════════════════
+
 function extractXMLField(xml, tag) {
   const cdataRe = new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i');
   const plainRe = new RegExp(`<${tag}[^>]*>([^<]*(?:<(?!\\/${tag})[^<]*)*)<\\/${tag}>`, 'i');
@@ -265,11 +185,13 @@ function extractXMLField(xml, tag) {
   if (pl) return pl[1].replace(/<[^>]*>/g, '').trim();
   return '';
 }
+
 function extractXMLAttr(xml, tag, attr) {
   const re = new RegExp(`<${tag}[^>]*\\s${attr}=["']([^"']+)["']`, 'i');
   const m = xml.match(re);
   return m ? m[1].trim() : '';
 }
+
 function parseRSSXML(xml, maxItems = 15) {
   const items = [];
   const re = /<(?:item|entry)[^>]*>([\s\S]*?)<\/(?:item|entry)>/gi;
@@ -306,6 +228,7 @@ async function fetchRSS(feed, maxItems = 15) {
 // ══════════════════════════════════════════════════════════════
 // GNEWS
 // ══════════════════════════════════════════════════════════════
+
 async function fetchGNews(query, maxItems = 20) {
   if (!GNEWS_KEY) return [];
   const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&max=${maxItems}&apikey=${GNEWS_KEY}&sortby=publishedAt`;
@@ -326,13 +249,14 @@ async function fetchGNews(query, maxItems = 20) {
 // ══════════════════════════════════════════════════════════════
 // TANKERS (Datalastic AIS)
 // ══════════════════════════════════════════════════════════════
+
 async function fetchTankers() {
   if (!DATALASTIC_KEY) return null;
   const mmsiList = TRACKED_TANKERS.map(t => t.mmsi).join(',');
   const url = `https://api.datalastic.com/api/v0/vessel_bulk?api-key=${DATALASTIC_KEY}&mmsi=${mmsiList}`;
   const raw = await fetchJSON(url, 20000);
   if (!raw?.data?.length) return null;
-  const statusMap = { 0:'underway',1:'anchored',2:'not under command',3:'restricted',5:'moored',6:'aground' };
+  const statusMap = { 0:'underway', 1:'anchored', 2:'not under command', 3:'restricted', 5:'moored', 6:'aground' };
   return raw.data.map(v => {
     const meta   = TRACKED_TANKERS.find(t => t.mmsi === String(v.mmsi)) || {};
     const status = statusMap[v.navigational_status ?? v.nav_status] || (parseFloat(v.speed) > 0.5 ? 'underway' : 'anchored');
@@ -358,8 +282,77 @@ async function fetchTankers() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// DERIVED PRICES
+// Computed from live benchmarks using standard market differentials
+// ══════════════════════════════════════════════════════════════
+
+function buildDerivedPrices(prices) {
+  const brent      = prices.brent?.latest?.price;
+  const wti        = prices.wti?.latest?.price;
+  const brentHist  = prices.brent?.history || [];
+  const wtiHist    = prices.wti?.history   || [];
+
+  if (!brent) {
+    console.warn('[derived] No Brent price — skipping derived contracts');
+    return;
+  }
+
+  // Helper: build a derived contract from base + fixed differential
+  function derived(id, name, unit, exchange, flag, basePrice, baseHistory, diff) {
+    const price     = parseFloat((basePrice + diff).toFixed(2));
+    const prevBase  = baseHistory.length >= 2 ? baseHistory[baseHistory.length - 2].value : null;
+    const prevPrice = prevBase !== null ? prevBase + diff : null;
+    return {
+      id, name, unit, exchange, flag,
+      latest:    { price, timestamp: new Date().toISOString() },
+      history:   baseHistory.map(h => ({
+        period: h.period,
+        value:  parseFloat((h.value + diff).toFixed(2)),
+      })),
+      change:    prevPrice !== null ? parseFloat((price - prevPrice).toFixed(3)) : null,
+      changePct: prevPrice !== null ? parseFloat(((price - prevPrice) / prevPrice * 100).toFixed(2)) : null,
+      derivedFrom: `${diff >= 0 ? 'Brent +' : 'Brent '}$${diff}`,
+    };
+  }
+
+  // OPEC Basket — blended member crudes, historically ~$3 below Brent
+  prices.opec  = derived('opec',  'OPEC Basket',             'USD/bbl', 'OPEC', '🛢',  brent, brentHist, -3.00);
+
+  // Urals — Russian crude, heavy sanction/war discount vs Brent
+  prices.urals = derived('urals', 'Urals Crude',             'USD/bbl', 'OTC',  '🇷🇺', brent, brentHist, -13.50);
+
+  // WCS — Canadian heavy sour crude, large WTI discount
+  if (wti) {
+    prices.wcs = derived('wcs', 'Western Canadian Select',   'USD/bbl', 'OTC',  '🇨🇦', wti, wtiHist, -18.50);
+  }
+
+  // Low Sulphur Gasoil — ICE Gasoil, USD/MT (Brent × 7.45 bbl/MT + crack spread)
+  const lcoPrice  = parseFloat((brent * 7.45 + 15).toFixed(2));
+  const prevBrent = brentHist.length >= 2 ? brentHist[brentHist.length - 2].value : null;
+  const prevLco   = prevBrent !== null ? parseFloat((prevBrent * 7.45 + 15).toFixed(2)) : null;
+  prices.lco = {
+    id: 'lco', name: 'Low Sulphur Gasoil', unit: 'USD/MT', exchange: 'ICE', flag: '🚢',
+    latest:    { price: lcoPrice, timestamp: new Date().toISOString() },
+    history:   brentHist.map(h => ({ period: h.period, value: parseFloat((h.value * 7.45 + 15).toFixed(2)) })),
+    change:    prevLco !== null ? parseFloat((lcoPrice - prevLco).toFixed(2)) : null,
+    changePct: prevLco !== null ? parseFloat(((lcoPrice - prevLco) / prevLco * 100).toFixed(2)) : null,
+    derivedFrom: 'Brent × 7.45 + $15',
+  };
+
+  // Bonny Light — Nigerian light sweet, premium to Brent
+  prices.bonny = derived('bonny', 'Bonny Light',             'USD/bbl', 'OTC',  '🇳🇬', brent, brentHist, +1.80);
+
+  // ESPO Blend — Russian Pacific crude, smaller discount than Urals
+  prices.espo  = derived('espo',  'ESPO Blend',              'USD/bbl', 'OTC',  '🇷🇺', brent, brentHist, -4.50);
+
+  const derivedKeys = ['opec','urals','wcs','lco','bonny','espo'];
+  console.log(`[derived] ${derivedKeys.map(id => `${id}=$${prices[id]?.latest?.price ?? 'MISSING'}`).join(', ')}`);
+}
+
+// ══════════════════════════════════════════════════════════════
 // UTILS
 // ══════════════════════════════════════════════════════════════
+
 function timeAgo(dateStr) {
   try {
     const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -373,8 +366,9 @@ function timeAgo(dateStr) {
 function isCritical(text) {
   if (!text) return false;
   const t = text.toLowerCase();
-  return ['opec+','opec cut','surge','crash','sanction','attack','war','pipeline shut','explosion',
-          'record high','record low','emergency','force majeure','supply disruption'].some(k => t.includes(k));
+  return ['opec+','opec cut','surge','crash','sanction','attack','war','pipeline shut',
+          'explosion','record high','record low','emergency','force majeure',
+          'supply disruption','strait of hormuz'].some(k => t.includes(k));
 }
 
 function detectTag(text, fallback = 'NEWS') {
@@ -405,6 +399,7 @@ function dedupeNews(articles) {
 // ══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ══════════════════════════════════════════════════════════════
+
 export default async function handler(req, context) {
   const startTime = Date.now();
   const fetchedAt = new Date().toISOString();
@@ -413,65 +408,44 @@ export default async function handler(req, context) {
   const store  = getStore('crude-radar');
   const errors = [];
 
-  // ── 1. PRICES ────────────────────────────────────────────────
+  // ── 1. PRICES (OilPriceAPI) ───────────────────────────────
   const prices = {};
 
   if (!OILPRICE_KEY) {
     console.warn('[prices] OILPRICE_API_KEY not set');
     errors.push('OILPRICE_API_KEY missing');
   } else {
-    console.log(`[prices] Fetching ${PRICE_CONTRACTS.length} contracts (latest + 30d history)...`);
+    console.log(`[prices] Fetching ${PRICE_CONTRACTS.length} contracts (sequential)...`);
 
-   // REPLACE WITH:
-    // Sequential fetching — avoids saturating Netlify outbound connections
     for (const c of PRICE_CONTRACTS) {
-      if (!prices[c.id]) {
-        prices[c.id] = {
-          id: c.id, name: c.name, unit: c.unit,
-          exchange: c.exchange, flag: c.flag,
-          latest: null, history: [], change: null, changePct: null,
-        };
-      }
+      prices[c.id] = {
+        id: c.id, name: c.name, unit: c.unit,
+        exchange: c.exchange, flag: c.flag,
+        latest: null, history: [], change: null, changePct: null,
+      };
 
       // Fetch latest price
       const latest = await fetchOilPriceLatest(c);
-      if (latest) prices[c.id].latest = latest;
+      if (latest) {
+        prices[c.id].latest    = latest;
+        prices[c.id].change    = latest.change    ?? null;
+        prices[c.id].changePct = latest.changePct ?? null;
+      }
 
-      // Small pause between requests to avoid rate limiting
       await new Promise(r => setTimeout(r, 500));
 
-      // Fetch history
+      // Fetch 30-day history (deduplicated to one price per day)
       const history = await fetchOilPriceHistory(c);
       if (history?.length) prices[c.id].history = history;
 
-      // Pause between contracts
       await new Promise(r => setTimeout(r, 500));
     }
-
-// REPLACE WITH:
-    // Use 24h change from API if available, otherwise compute from history
-    for (const p of Object.values(prices)) {
-      if (!p.latest?.price) continue;
-      // OilPriceAPI provides 24h change directly on the latest object
-      if (p.latest.change !== null && p.latest.change !== undefined) {
-        p.change    = p.latest.change;
-        p.changePct = p.latest.changePct;
-      } else if (p.history.length >= 2) {
-        const prev  = p.history[p.history.length - 2].value;
-        const curr  = p.latest.price;
-        p.change    = parseFloat((curr - prev).toFixed(3));
-        p.changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
-      }
-    }
-
-    // Compute derived prices from benchmark data
-    computeDerivedPrices(prices);
 
     const live = Object.values(prices).filter(p => p.latest?.price);
     console.log(`[prices] Live: ${live.map(p => `${p.id}=$${p.latest.price}`).join(', ')}`);
   }
 
-  // ── 2. EIA ───────────────────────────────────────────────────
+  // ── 2. EIA DATA ───────────────────────────────────────────
   const eia = {};
 
   if (!EIA_KEY) {
@@ -479,56 +453,72 @@ export default async function handler(req, context) {
     errors.push('EIA_API_KEY missing');
   } else {
     console.log(`[eia] Fetching ${EIA_SERIES.length} series...`);
-    const eiaSettled = await Promise.allSettled(
+    const eiaResults = await Promise.allSettled(
       EIA_SERIES.map(async s => ({ key: s.key, data: await fetchEIASeries(s) }))
     );
-    for (const r of eiaSettled) {
+    for (const r of eiaResults) {
       if (r.status === 'fulfilled' && r.value?.data) eia[r.value.key] = r.value.data;
     }
     console.log(`[eia] Got ${Object.keys(eia).length}/${EIA_SERIES.length} series`);
 
-    // EIA price fallbacks (used when OilPriceAPI key not set)
+    // EIA price fallbacks when OilPriceAPI key not set
     if (!prices.wti && eia.wti_spot_monthly?.series?.length) {
       const s = [...eia.wti_spot_monthly.series].reverse();
-      prices.wti = { id:'wti', name:'WTI Crude', unit:'USD/bbl', exchange:'EIA/NYMEX', flag:'🇺🇸',
-        latest: { price: eia.wti_spot_monthly.latest.value, timestamp: eia.wti_spot_monthly.latest.period },
+      prices.wti = {
+        id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '🇺🇸',
+        latest:  { price: eia.wti_spot_monthly.latest.value, timestamp: eia.wti_spot_monthly.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.wti_spot_monthly.latest.change, changePct: eia.wti_spot_monthly.latest.changePct };
+        change: eia.wti_spot_monthly.latest.change, changePct: eia.wti_spot_monthly.latest.changePct,
+      };
     }
     if (!prices.brent && eia.brent_spot_monthly?.series?.length) {
       const s = [...eia.brent_spot_monthly.series].reverse();
-      prices.brent = { id:'brent', name:'Brent Crude', unit:'USD/bbl', exchange:'EIA/ICE', flag:'🌊',
-        latest: { price: eia.brent_spot_monthly.latest.value, timestamp: eia.brent_spot_monthly.latest.period },
+      prices.brent = {
+        id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '🌊',
+        latest:  { price: eia.brent_spot_monthly.latest.value, timestamp: eia.brent_spot_monthly.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.brent_spot_monthly.latest.change, changePct: eia.brent_spot_monthly.latest.changePct };
+        change: eia.brent_spot_monthly.latest.change, changePct: eia.brent_spot_monthly.latest.changePct,
+      };
     }
     if (!prices.crude_ng && eia.henry_hub_daily?.series?.length) {
       const s = [...eia.henry_hub_daily.series].slice(0, 30).reverse();
-      prices.crude_ng = { id:'crude_ng', name:'Natural Gas', unit:'USD/MMBtu', exchange:'EIA/NYMEX', flag:'⚡',
-        latest: { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
+      prices.crude_ng = {
+        id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '⚡',
+        latest:  { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct };
+        change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct,
+      };
     }
   }
 
-  // ── 3. NEWS ──────────────────────────────────────────────────
+  // ── 3. DERIVED PRICES ─────────────────────────────────────
+  // Must run after both OilPriceAPI and EIA so benchmarks are available
+  buildDerivedPrices(prices);
+
+  const allContracts = Object.values(prices).filter(p => p.latest?.price);
+  console.log(`[prices] Total in blob: ${allContracts.length} — ${allContracts.map(p => p.id).join(', ')}`);
+
+  // ── 4. NEWS (RSS + GNews) ─────────────────────────────────
   if (!GNEWS_KEY) console.warn('[news] GNEWS_API_KEY not set — RSS only');
   console.log('[news] Fetching...');
 
-  const newsSettled = await Promise.allSettled([
+  const newsResults = await Promise.allSettled([
     ...RSS_FEEDS.map(f => fetchRSS(f, 15)),
-    ...(GNEWS_KEY ? [fetchGNews('crude oil OPEC barrel price', 20), fetchGNews('oil tanker LNG shipping', 10)] : []),
+    ...(GNEWS_KEY ? [
+      fetchGNews('crude oil OPEC barrel price', 20),
+      fetchGNews('oil tanker LNG shipping', 10),
+    ] : []),
   ]);
 
   const allArticles = [];
-  for (let i = 0; i < newsSettled.length; i++) {
-    const r    = newsSettled[i];
+  for (let i = 0; i < newsResults.length; i++) {
+    const r    = newsResults[i];
     const name = i < RSS_FEEDS.length ? RSS_FEEDS[i].source : `GNews[${i - RSS_FEEDS.length}]`;
     if (r.status === 'fulfilled' && Array.isArray(r.value)) {
       console.log(`[news] ${name}: ${r.value.length} articles`);
       allArticles.push(...r.value);
     } else {
-      console.warn(`[news] ${name}: FAILED — ${r.reason?.message || 'unknown'}`);
+      console.warn(`[news] ${name}: FAILED`);
     }
   }
 
@@ -539,7 +529,7 @@ export default async function handler(req, context) {
   ).slice(0, 50);
   console.log(`[news] Total after dedup: ${news.length}`);
 
-  // ── 4. TANKERS ───────────────────────────────────────────────
+  // ── 5. TANKERS (Datalastic AIS) ───────────────────────────
   let tankers = null;
   if (DATALASTIC_KEY) {
     console.log('[tankers] Fetching AIS...');
@@ -547,12 +537,12 @@ export default async function handler(req, context) {
     console.log(`[tankers] ${tankers ? tankers.length + ' vessels' : 'FAILED'}`);
   }
 
-  // ── 5. WRITE BLOBS ───────────────────────────────────────────
+  // ── 6. WRITE BLOBS ────────────────────────────────────────
   const duration_ms = Date.now() - startTime;
   const meta = {
     fetchedAt,
     duration_ms,
-    price_contracts_live: Object.values(prices).filter(p => p.latest?.price).map(p => p.id),
+    price_contracts_live: allContracts.map(p => p.id),
     eia_series_fetched:   Object.keys(eia).length,
     news_count:           news.length,
     tankers_live:         tankers ? tankers.length : 0,
