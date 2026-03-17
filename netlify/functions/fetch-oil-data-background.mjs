@@ -125,11 +125,19 @@ async function fetchText(url, timeoutMs = 15000) {
 // ══════════════════════════════════════════════════════════════
 // OILPRICE API
 // ══════════════════════════════════════════════════════════════
+// REPLACE WITH:
 async function fetchOilPriceLatest(contract) {
   const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.price) return null;
-  return { price: parseFloat(raw.data.price), timestamp: raw.data.created_at };
+  const d = raw.data;
+  return {
+    price:     parseFloat(d.price),
+    timestamp: d.created_at,
+    // OilPriceAPI returns 24h change data — use it directly
+    change:    d.changes?.['24h']?.amount    ?? null,
+    changePct: d.changes?.['24h']?.percent   ?? null,
+  };
 }
 
 async function fetchOilPriceHistory(contract) {
@@ -175,9 +183,11 @@ function computeDerivedPrices(prices) {
     };
   }
 
-  // OPEC Basket — weighted avg of OPEC member crudes, tracks ~3% below Brent
+  
+// REPLACE WITH:
+  // OPEC Basket — fixed differential below Brent (historically $2-4 below)
   makeDerived('opec',  'OPEC Basket',              'USD/bbl', 'OPEC', '🛢',
-    brent, brent ? -(brent * 0.03) : 0, brentHistory, 'Brent × 0.97');
+    brent, -3.00, brentHistory, 'Brent − $3.00');
 
   // Urals — Russian Brent-linked crude, current war sanction discount
   makeDerived('urals', 'Urals Crude',              'USD/bbl', 'OTC',  '🇷🇺',
@@ -187,11 +197,23 @@ function computeDerivedPrices(prices) {
   makeDerived('wcs',   'Western Canadian Select',  'USD/bbl', 'OTC',  '🇨🇦',
     wti, -18.50, wtiHistory, 'WTI − $18.50');
 
-  // Low Sulphur Gasoil (ICE) — refined product, ~Brent + refinery margin
-  // Approximated: Brent × 8.75 bbl/MT conversion then add crack spread
-  // Displayed as USD/MT — typical value ~Brent * 8.9
-  makeDerived('lco',   'Low Sulphur Gasoil',       'USD/MT',  'ICE',  '🚢',
-    brent, brent ? (brent * 7.9) : 0, brentHistory, 'Brent × 8.9 (crack spread)');
+  // REPLACE WITH:
+  // Low Sulphur Gasoil — ICE Gasoil futures, USD/MT
+  // Converted from per-barrel: (Brent × 7.45 barrels/MT) + $15 crack spread
+  // makeDerived uses basePrice + differential, so we pass 0 as base and full calc as diff
+  if (brent) {
+    const lcoPrice   = parseFloat((brent * 7.45 + 15).toFixed(2));
+    const prevBrent  = brentHistory.length >= 2 ? brentHistory[brentHistory.length - 2].value : null;
+    const prevLco    = prevBrent ? parseFloat((prevBrent * 7.45 + 15).toFixed(2)) : null;
+    prices['lco'] = {
+      id: 'lco', name: 'Low Sulphur Gasoil', unit: 'USD/MT', exchange: 'ICE', flag: '🚢',
+      latest:    { price: lcoPrice, timestamp: new Date().toISOString() },
+      history:   brentHistory.map(h => ({ period: h.period, value: parseFloat((h.value * 7.45 + 15).toFixed(2)) })),
+      change:    prevLco ? parseFloat((lcoPrice - prevLco).toFixed(2)) : null,
+      changePct: prevLco ? parseFloat(((lcoPrice - prevLco) / prevLco * 100).toFixed(2)) : null,
+      derivedFrom: 'Brent × 7.45 + $15',
+    };
+  }
 
   // Bonny Light — Nigerian light sweet, premium to Brent
   makeDerived('bonny', 'Bonny Light',              'USD/bbl', 'OTC',  '🇳🇬',
@@ -418,13 +440,20 @@ export default async function handler(req, context) {
       await new Promise(r => setTimeout(r, 500));
     }
 
-    // Compute day-over-day change
+// REPLACE WITH:
+    // Use 24h change from API if available, otherwise compute from history
     for (const p of Object.values(prices)) {
-      if (!p.latest?.price || p.history.length < 2) continue;
-      const prev = p.history[p.history.length - 2].value;
-      const curr = p.latest.price;
-      p.change    = parseFloat((curr - prev).toFixed(3));
-      p.changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
+      if (!p.latest?.price) continue;
+      // OilPriceAPI provides 24h change directly on the latest object
+      if (p.latest.change !== null && p.latest.change !== undefined) {
+        p.change    = p.latest.change;
+        p.changePct = p.latest.changePct;
+      } else if (p.history.length >= 2) {
+        const prev  = p.history[p.history.length - 2].value;
+        const curr  = p.latest.price;
+        p.change    = parseFloat((curr - prev).toFixed(3));
+        p.changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
+      }
     }
 
     // Compute derived prices from benchmark data
