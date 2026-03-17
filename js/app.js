@@ -157,12 +157,26 @@
     }
 
     if (updated > 0) {
-      state.liveDataActive = true;   // stop simulation overwriting real prices
+      state.liveDataActive     = true;
+      state._lastParsedPrices  = parsedPrices;  // save for chart headers
       renderPriceGrid();
+      updateChartHeaders(parsedPrices);          // update chart page headers live
       console.log(`[CrudeRadar] Applied live prices to ${updated} tiles`);
     }
 
-    // Update chart history arrays with live 30-day data
+    // Update chart history — deduplicate intraday ticks to one value per day
+    function dedupDaily(history) {
+      if (!history?.length) return [];
+      const byDay = {};
+      history.forEach(h => {
+        const day = (h.period || '').slice(0, 10);
+        if (day) byDay[day] = h.value;
+      });
+      return Object.entries(byDay)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([period, value]) => ({ period, value }));
+    }
+
     const histMap = {
       wti:     parsedPrices.wti?.history,
       brent:   parsedPrices.brent?.history,
@@ -173,25 +187,28 @@
     };
 
     let chartDataChanged = false;
-    for (const [key, history] of Object.entries(histMap)) {
-      if (!history?.length) continue;
+    for (const [key, rawHistory] of Object.entries(histMap)) {
+      if (!rawHistory?.length) continue;
+      const history = dedupDaily(rawHistory);
+      if (!history.length) continue;
       CrudeRadar.priceHistory[key] = history.map(h => h.value);
       if (key === 'wti') {
         CrudeRadar.chartLabels = history.map(h => {
           const d = new Date(h.period);
-          return isNaN(d) ? h.period : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return isNaN(d.getTime()) ? h.period : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         });
+        console.log('[charts] History: ' + history.length + ' daily points from ' + history[0]?.period + ' to ' + history[history.length-1]?.period);
       }
       chartDataChanged = true;
     }
 
-    // Re-draw charts with live data if they were already rendered
+    // Re-draw charts with fresh deduplicated data
     if (chartDataChanged && state.chartsInitialized) {
       state.chartsInitialized = false;
       try {
-        // Destroy all existing Chart.js instances to avoid "canvas already in use"
-        Object.values(Chart.instances || {}).forEach(chart => {
-          try { chart.destroy(); } catch (_) {}
+        ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
+          const canvas = document.getElementById(id);
+          if (canvas) { const c = Chart.getChart(canvas); if (c) c.destroy(); }
         });
       } catch (_) {}
       initChartsPage();
@@ -239,14 +256,40 @@
       renderPriceGrid();
     }
 
-    // Update chart history from EIA monthly if OilPriceAPI history is empty
-    if (eiaData.wtiMonthly?.length && !CrudeRadar.priceHistory.wti?.length) {
+    // Use EIA monthly as chart history fallback when:
+    //  a) OilPriceAPI history is empty, OR
+    //  b) OilPriceAPI returned intraday ticks (fewer than 5 unique dates = bad history)
+    const wtiUniqueDates = new Set((CrudeRadar.priceHistory.wti || []).map((_, i) => CrudeRadar.chartLabels?.[i])).size;
+    const needsEIAFallback = !CrudeRadar.priceHistory.wti?.length || wtiUniqueDates < 5;
+
+    if (needsEIAFallback && eiaData.wtiMonthly?.length) {
       const s = eiaData.wtiMonthly.slice(0, 30).reverse();
-      CrudeRadar.priceHistory.wti    = s.map(d => d.value);
-      CrudeRadar.chartLabels         = s.map(d => d.period);
+      CrudeRadar.priceHistory.wti = s.map(d => d.value);
+      CrudeRadar.chartLabels = s.map(d => {
+        // EIA monthly periods are YYYY-MM — format as Mon YYYY
+        const parts = d.period.split('-');
+        if (parts.length === 2) {
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          return months[parseInt(parts[1]) - 1] + ' ' + parts[0];
+        }
+        return d.period;
+      });
+      console.log('[charts] Using EIA monthly fallback for WTI history: ' + s.length + ' points');
     }
-    if (eiaData.brentMonthly?.length && !CrudeRadar.priceHistory.brent?.length) {
-      CrudeRadar.priceHistory.brent  = eiaData.brentMonthly.slice(0, 30).reverse().map(d => d.value);
+    if (needsEIAFallback && eiaData.brentMonthly?.length) {
+      CrudeRadar.priceHistory.brent = eiaData.brentMonthly.slice(0, 30).reverse().map(d => d.value);
+    }
+
+    // If charts page is open and we just loaded better history, re-render
+    if (needsEIAFallback && state.chartsInitialized) {
+      state.chartsInitialized = false;
+      try {
+        ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
+          const canvas = document.getElementById(id);
+          if (canvas) { const c = Chart.getChart(canvas); if (c) c.destroy(); }
+        });
+      } catch (_) {}
+      initChartsPage();
     }
   }
 
@@ -725,29 +768,63 @@
   // ════════════════════════════════════════════════════════════
   // CHARTS PAGE
   // ════════════════════════════════════════════════════════════
+
+  // Called by applyLivePrices whenever prices update — keeps headers live
+  function updateChartHeaders(parsedPrices) {
+    const map = [
+      { priceKey:'wti',     id:'wti'     },
+      { priceKey:'brent',   id:'brent'   },
+      { priceKey:'dubai',   id:'dubai'   },
+      { priceKey:'natgas',  id:'natgas'  },
+      { priceKey:'rbob',    id:'rbob'    },
+      { priceKey:'heatoil', id:'heatoil' },
+    ];
+    map.forEach(({ priceKey, id }) => {
+      const data     = parsedPrices?.[priceKey];
+      const priceEl  = document.getElementById(`chart-${id}-price`);
+      const chgEl    = document.getElementById(`chart-${id}-chg`);
+      if (!priceEl || !chgEl || !data?.price) return;
+      priceEl.textContent = '$' + data.price.toFixed(2);
+      if (data.changePct !== null && data.changePct !== undefined) {
+        const up   = data.changePct >= 0;
+        const sign = up ? '▲ +' : '▼ ';
+        chgEl.textContent  = `${sign}${data.changePct.toFixed(2)}%`;
+        chgEl.style.color  = up ? 'var(--accent-green)' : 'var(--accent-red)';
+      }
+    });
+  }
+
   function initChartsPage() {
     if (state.chartsInitialized) return;
-    state.chartsInitialized = true;
 
-    // If chart data is still empty (no live data yet), show placeholder
+    // Update headers with whatever prices we have right now
+    updateChartHeaders(state._lastParsedPrices);
+
     const hasData = Object.values(CrudeRadar.priceHistory).some(h => h?.length > 0);
     if (!hasData) {
-      console.info('[charts] No history data yet — charts will render when live data loads');
+      console.info('[charts] No history data yet — waiting for live data');
+      state.chartsInitialized = false; // allow retry
       return;
     }
 
+    state.chartsInitialized = true;
+
     const cfgs = [
-      { id:'chart-wti',     label:'WTI Crude',    data:CrudeRadar.priceHistory.wti,     color:'#ff6b00' },
-      { id:'chart-brent',   label:'Brent Crude',  data:CrudeRadar.priceHistory.brent,   color:'#ffb300' },
-      { id:'chart-dubai',   label:'Dubai Crude',  data:CrudeRadar.priceHistory.dubai,   color:'#00b0ff' },
-      { id:'chart-natgas',  label:'Natural Gas',  data:CrudeRadar.priceHistory.natgas,  color:'#00e5ff' },
-      { id:'chart-rbob',    label:'RBOB Gasoline',data:CrudeRadar.priceHistory.rbob,    color:'#00e676' },
-      { id:'chart-heatoil', label:'Heating Oil',  data:CrudeRadar.priceHistory.heatoil, color:'#ff1744' },
+      { id:'chart-wti',     label:'WTI Crude',     data:CrudeRadar.priceHistory.wti,     color:'#ff6b00' },
+      { id:'chart-brent',   label:'Brent Crude',   data:CrudeRadar.priceHistory.brent,   color:'#ffb300' },
+      { id:'chart-dubai',   label:'Dubai Crude',   data:CrudeRadar.priceHistory.dubai,   color:'#00b0ff' },
+      { id:'chart-natgas',  label:'Natural Gas',   data:CrudeRadar.priceHistory.natgas,  color:'#00e5ff' },
+      { id:'chart-rbob',    label:'RBOB Gasoline', data:CrudeRadar.priceHistory.rbob,    color:'#00e676' },
+      { id:'chart-heatoil', label:'Heating Oil',   data:CrudeRadar.priceHistory.heatoil, color:'#ff1744' },
     ];
 
     cfgs.forEach(cfg => {
       const canvas = document.getElementById(cfg.id);
       if (!canvas || !cfg.data?.length) return;
+      // Destroy existing chart if any
+      const existing = Chart.getChart(canvas);
+      if (existing) existing.destroy();
+
       const ctx  = canvas.getContext('2d');
       const grad = ctx.createLinearGradient(0, 0, 0, 200);
       grad.addColorStop(0, cfg.color + '40');
@@ -766,12 +843,14 @@
           },
           scales: {
             x: { grid:{color:'rgba(30,45,69,0.4)'}, ticks:{color:'#4a6078',font:{family:'Share Tech Mono',size:9},maxTicksLimit:6}, border:{color:'rgba(30,45,69,0.6)'} },
-            y: { grid:{color:'rgba(30,45,69,0.4)'}, ticks:{color:'#4a6078',font:{family:'Share Tech Mono',size:10}},                border:{color:'rgba(30,45,69,0.6)'} },
+            y: { grid:{color:'rgba(30,45,69,0.4)'}, ticks:{color:'#4a6078',font:{family:'Share Tech Mono',size:10}}, border:{color:'rgba(30,45,69,0.6)'} },
           },
           interaction: { mode:'index', intersect:false },
         },
       });
     });
+
+    console.log('[charts] Rendered', cfgs.filter(c => CrudeRadar.priceHistory[c.id.replace('chart-','')]?.length).length, 'charts');
   }
 
   // ════════════════════════════════════════════════════════════
