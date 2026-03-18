@@ -1,44 +1,44 @@
 // ============================================================
 // netlify/functions/fetch-oil-data-background.mjs
 //
-// Netlify Pro Background Function — up to 15 min execution.
+// Netlify Pro Background Function -- up to 15 min execution.
 // Triggered hourly by scheduled-refresh.mjs.
 // Also: POST /api/oil-refresh for manual trigger.
 //
 // Fetches:
-//   1. OilPriceAPI  — live spot prices + 30-day daily history
-//   2. EIA Open Data — 8 series (stocks, production, prices)
-//   3. RSS feeds    — OilPrice.com, Rigzone, NGI, Offshore Tech
-//   4. GNews        — oil/energy news (if GNEWS_API_KEY set)
-//   5. Datalastic   — AIS tanker positions (if DATALASTIC_API_KEY set)
+//   1. OilPriceAPI  -- live spot prices + 30-day daily history
+//   2. EIA Open Data -- 8 series (stocks, production, prices)
+//   3. RSS feeds    -- OilPrice.com, Rigzone, NGI, Offshore Tech
+//   4. GNews        -- oil/energy news (if GNEWS_API_KEY set)
+//   5. Datalastic   -- AIS tanker positions (if DATALASTIC_API_KEY set)
 //
 // Writes Netlify Blobs (store: 'crude-radar'):
-//   prices  — all 12 contracts (6 live + 6 derived)
-//   news    — merged deduplicated articles
-//   eia     — EIA inventory + production series
-//   tankers — AIS vessel positions
-//   meta    — run stats, timestamps, errors
+//   prices  -- all 12 contracts (6 live + 6 derived)
+//   news    -- merged deduplicated articles
+//   eia     -- EIA inventory + production series
+//   tankers -- AIS vessel positions
+//   meta    -- run stats, timestamps, errors
 // ============================================================
 
 import { getStore } from '@netlify/blobs';
 
-// ── ENV VARS ──────────────────────────────────────────────────
+// ?? ENV VARS ??????????????????????????????????????????????????
 const OILPRICE_KEY   = process.env.OILPRICE_API_KEY   || '';
 const EIA_KEY        = process.env.EIA_API_KEY         || '';
 const GNEWS_KEY      = process.env.GNEWS_API_KEY       || '';
 const DATALASTIC_KEY = process.env.DATALASTIC_API_KEY  || '';
 
-// ── OILPRICE API CONTRACTS ────────────────────────────────────
+// ?? OILPRICE API CONTRACTS ????????????????????????????????????
 const PRICE_CONTRACTS = [
-  { code: 'WTI_USD',           id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '🇺🇸' },
-  { code: 'BRENT_CRUDE_USD',   id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '🌊'  },
-  { code: 'DUBAI_CRUDE_USD',   id: 'dubai',    name: 'Dubai Crude',   unit: 'USD/bbl',   exchange: 'DME',   flag: '🇦🇪' },
-  { code: 'NATURAL_GAS_USD',   id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '⚡'  },
-  { code: 'HEATING_OIL_USD',   id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '🔥'  },
-  { code: 'GASOLINE_RBOB_USD', id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '⛽'  },
+  { code: 'WTI_USD',           id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '??' },
+  { code: 'BRENT_CRUDE_USD',   id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '?'  },
+  { code: 'DUBAI_CRUDE_USD',   id: 'dubai',    name: 'Dubai Crude',   unit: 'USD/bbl',   exchange: 'DME',   flag: '??' },
+  { code: 'NATURAL_GAS_USD',   id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '?'  },
+  { code: 'HEATING_OIL_USD',   id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
+  { code: 'GASOLINE_RBOB_USD', id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
 ];
 
-// ── EIA SERIES ────────────────────────────────────────────────
+// ?? EIA SERIES ????????????????????????????????????????????????
 const EIA_SERIES = [
   { id: 'PET.WCRSTUS1.W',   key: 'us_crude_stocks',     freq: 'weekly',  length: 104 },
   { id: 'PET.WGTSTUS1.W',   key: 'us_gasoline_stocks',  freq: 'weekly',  length: 52  },
@@ -50,30 +50,55 @@ const EIA_SERIES = [
   { id: 'NG.RNGWHHD.D',     key: 'henry_hub_daily',     freq: 'daily',   length: 90  },
 ];
 
-// ── RSS FEEDS (confirmed working) ────────────────────────────
+// ?? RSS FEEDS (confirmed working) ????????????????????????????
 const RSS_FEEDS = [
-  { url: 'https://oilprice.com/rss/main',                        source: 'OilPrice.com',  tag: 'MARKET' },
-  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx', source: 'Rigzone',       tag: 'SUPPLY' },
-  { url: 'https://oilprice.com/rss/energy',                      source: 'OilPrice Energy', tag: 'PRICE' },
-  { url: 'https://www.naturalgasintel.com/feed/',                source: 'NGI',           tag: 'LNG'    },
-  { url: 'https://www.offshore-technology.com/feed/',            source: 'Offshore Tech', tag: 'SUPPLY' },
+  { url: 'https://oilprice.com/rss/main', source: 'OilPrice.com', tag: 'MARKET' },
+  { url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx', source: 'Rigzone', tag: 'SUPPLY' },
+  { url: 'https://energyvoice.com/category/oil-and-gas/feed', source: 'Energy Voice', tag: 'MARKET' },
+  { url: 'https://oilprice.com/rss/energy', source: 'OilPrice Energy', tag: 'PRICE' },
+  { url: 'https://www.naturalgasintel.com/feed/', source: 'NGI', tag: 'GAS' },
+  { url: 'https://www.offshore-technology.com/feed/', source: 'Offshore Technology', tag: 'SUPPLY' },
+  { url: 'https://oilandgas360.com/feed', source: 'Oil & Gas 360', tag: 'MARKET' },
+  { url: 'https://drillingcontractor.org/feed', source: 'Drilling Contractor', tag: 'SUPPLY' },
+  { url: 'https://boereport.com/feed', source: 'BOE Report', tag: 'MARKET' },
+  { url: 'https://oilgasdaily.com/oilgasdaily.xml', source: 'Oil Gas Daily', tag: 'MARKET' },
+  { url: 'https://mees.com/latest-issue/rss', source: 'MEES', tag: 'MIDEAST' },
+  { url: 'https://iraq-businessnews.com/category/oil-gas/feed', source: 'Iraq Business News', tag: 'MIDEAST' },
+  { url: 'https://africaoilgasreport.com/feed', source: 'Africa Oil+Gas Report', tag: 'AFRICA' },
+  { url: 'https://egyptoil-gas.com/news/feed', source: 'Egypt Oil & Gas', tag: 'AFRICA' },
+  { url: 'https://oilfieldtechnology.com/rss/oil-field-technology.rss', source: 'Oilfield Technology', tag: 'SUPPLY' },
+  { url: 'https://shalemag.com/feed', source: 'SHALE Magazine', tag: 'SUPPLY' },
+  { url: 'https://malcysblog.com/feed', source: "Malcy's Blog", tag: 'MARKET' },
+  { url: 'https://oilandgasmiddleeast.com/feed', source: 'Oil & Gas Middle East', tag: 'MIDEAST' },
+  { url: 'https://oilgasenergymagazine.com/feed', source: 'Oil Gas Energy Mag', tag: 'MARKET' },
+  { url: 'https://pboilandgasmagazine.com/feed', source: 'Permian Basin O&G', tag: 'SUPPLY' },
+  { url: 'https://orientenergyreview.com/feed', source: 'Orient Energy Review', tag: 'MARKET' },
+  { url: 'https://oilnewskenya.com/feed', source: 'Oilnewskenya', tag: 'AFRICA' },
+  { url: 'https://scandoil.com/bm.feed.xml', source: 'Scandinavian O&G', tag: 'SUPPLY' },
+  { url: 'https://drillers.com/feed', source: 'Drillers.com', tag: 'SUPPLY' },
+  { url: 'https://drillingmanual.com/feed', source: 'Drilling Manual', tag: 'SUPPLY' },
+  { url: 'https://reportingoilandgas.org/feed', source: 'Reportingoilandgas', tag: 'NEWS' },
+  { url: 'https://energy-oil-gas.com/feed', source: 'Energy Oil & Gas Mag', tag: 'MARKET' },
+  { url: 'https://oedigital.com/energy/oil/feed', source: 'OE Digital', tag: 'SUPPLY' },
+  { url: 'https://oilfutures.co.uk/feeds/posts/default', source: 'Crude Oil Futures', tag: 'MARKET' },
+  { url: 'https://enverus.com/feed', source: 'Enverus Blog', tag: 'MARKET' },
 ];
 
-// ── TANKERS ───────────────────────────────────────────────────
+// ?? TANKERS ???????????????????????????????????????????????????
 const TRACKED_TANKERS = [
-  { mmsi: '235678901', name: 'GULF STAR I',         type: 'VLCC',    flag: '🇵🇦' },
-  { mmsi: '358201445', name: 'OCEAN TITAN',         type: 'Suezmax', flag: '🇬🇷' },
-  { mmsi: '477123789', name: 'PACIFIC ARROW',       type: 'Aframax', flag: '🇸🇬' },
-  { mmsi: '636091234', name: 'ATLANTIC GLORY',      type: 'VLCC',    flag: '🇱🇷' },
-  { mmsi: '311000234', name: 'NORDIC BRAVE',        type: 'Suezmax', flag: '🇧🇸' },
-  { mmsi: '563098712', name: 'PIONEER SPIRIT',      type: 'VLCC',    flag: '🇸🇬' },
-  { mmsi: '229883000', name: 'HELLESPONT ACHILLES', type: 'ULCC',    flag: '🇬🇷' },
-  { mmsi: '441178900', name: 'KOREA PIONEER',       type: 'Aframax', flag: '🇰🇷' },
+  { mmsi: '235678901', name: 'GULF STAR I',         type: 'VLCC',    flag: '??' },
+  { mmsi: '358201445', name: 'OCEAN TITAN',         type: 'Suezmax', flag: '??' },
+  { mmsi: '477123789', name: 'PACIFIC ARROW',       type: 'Aframax', flag: '??' },
+  { mmsi: '636091234', name: 'ATLANTIC GLORY',      type: 'VLCC',    flag: '??' },
+  { mmsi: '311000234', name: 'NORDIC BRAVE',        type: 'Suezmax', flag: '??' },
+  { mmsi: '563098712', name: 'PIONEER SPIRIT',      type: 'VLCC',    flag: '??' },
+  { mmsi: '229883000', name: 'HELLESPONT ACHILLES', type: 'ULCC',    flag: '??' },
+  { mmsi: '441178900', name: 'KOREA PIONEER',       type: 'Aframax', flag: '??' },
 ];
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // HTTP HELPERS
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -82,7 +107,7 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'Accept': 'application/json', ...headers },
       });
-      // Don't retry 404s — resource doesn't exist
+      // Don't retry 404s -- resource doesn't exist
       if (res.status === 404) {
         console.warn(`[fetchJSON] 404 (no retry): ${url.slice(0, 90)}`);
         return null;
@@ -90,7 +115,7 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
-      console.warn(`[fetchJSON] attempt ${attempt}/${retries}: ${url.slice(0, 90)} → ${e.message}`);
+      console.warn(`[fetchJSON] attempt ${attempt}/${retries}: ${url.slice(0, 90)} -> ${e.message}`);
       if (attempt < retries) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }
@@ -109,14 +134,14 @@ async function fetchText(url, timeoutMs = 15000) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } catch (e) {
-    console.warn(`[fetchText] ${url.slice(0, 90)} → ${e.message}`);
+    console.warn(`[fetchText] ${url.slice(0, 90)} -> ${e.message}`);
     return null;
   }
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // OILPRICE API
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 async function fetchOilPriceLatest(contract) {
   const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
@@ -136,7 +161,7 @@ async function fetchOilPriceHistory(contract) {
   const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
   const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
   if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
-  // Sort ascending then deduplicate — keep last price per calendar day
+  // Sort ascending then deduplicate -- keep last price per calendar day
   const sorted = raw.data.prices
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const byDay = {};
@@ -149,9 +174,9 @@ async function fetchOilPriceHistory(contract) {
     .map(([period, value]) => ({ period, value }));
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // EIA
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 async function fetchEIASeries(s) {
   if (!EIA_KEY) return null;
@@ -172,9 +197,9 @@ async function fetchEIASeries(s) {
   };
 }
 
-// ══════════════════════════════════════════════════════════════
-// RSS — direct fetch + native XML parser
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
+// RSS -- direct fetch + native XML parser
+// ==============================================================
 
 function extractXMLField(xml, tag) {
   const cdataRe = new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i');
@@ -222,12 +247,20 @@ async function fetchRSS(feed, maxItems = 15) {
       critical:    isCritical(item.title),
       description: (item.description || '').replace(/<[^>]*>/g, '').slice(0, 200).trim(),
     }))
-    .filter(i => i.headline.length > 10);
+    .filter(i => {
+      if (i.headline.length <= 10) return false;
+      // 21-day cutoff
+      if (i.pubDate) {
+        const age = Date.now() - new Date(i.pubDate).getTime();
+        if (age > 21 * 24 * 60 * 60 * 1000) return false;
+      }
+      return true;
+    });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // GNEWS
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 async function fetchGNews(query, maxItems = 20) {
   if (!GNEWS_KEY) return [];
@@ -246,9 +279,9 @@ async function fetchGNews(query, maxItems = 20) {
   }));
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // TANKERS (Datalastic AIS)
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 async function fetchTankers() {
   if (!DATALASTIC_KEY) return null;
@@ -264,27 +297,27 @@ async function fetchTankers() {
       mmsi:        String(v.mmsi),
       name:        v.name    || meta.name || 'UNKNOWN',
       type:        v.type    || meta.type || 'Tanker',
-      flag:        meta.flag || '🚢',
+      flag:        meta.flag || '?',
       cargo:       'Crude Oil',
       lat:         parseFloat(v.lat || v.latitude  || 0),
       lng:         parseFloat(v.lon || v.longitude || 0),
       speed:       parseFloat(v.speed || 0).toFixed(1),
       course:      v.course || 0,
       status,
-      destination: v.destination || '—',
-      eta:         v.eta || v.estimated_time_arrival || '—',
-      imo:         v.imo || '—',
+      destination: v.destination || '--',
+      eta:         v.eta || v.estimated_time_arrival || '--',
+      imo:         v.imo || '--',
       updatedAt:   v.timestamp || new Date().toISOString(),
-      from:        v.last_port?.name || '—',
-      to:          v.destination     || '—',
+      from:        v.last_port?.name || '--',
+      to:          v.destination     || '--',
     };
   });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // DERIVED PRICES
 // Computed from live benchmarks using standard market differentials
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 function buildDerivedPrices(prices) {
   const brent      = prices.brent?.latest?.price;
@@ -293,7 +326,7 @@ function buildDerivedPrices(prices) {
   const wtiHist    = prices.wti?.history   || [];
 
   if (!brent) {
-    console.warn('[derived] No Brent price — skipping derived contracts');
+    console.warn('[derived] No Brent price -- skipping derived contracts');
     return;
   }
 
@@ -315,43 +348,43 @@ function buildDerivedPrices(prices) {
     };
   }
 
-  // OPEC Basket — blended member crudes, historically ~$3 below Brent
-  prices.opec  = derived('opec',  'OPEC Basket',             'USD/bbl', 'OPEC', '🛢',  brent, brentHist, -3.00);
+  // OPEC Basket -- blended member crudes, historically ~$3 below Brent
+  prices.opec  = derived('opec',  'OPEC Basket',             'USD/bbl', 'OPEC', '?',  brent, brentHist, -3.00);
 
-  // Urals — Russian crude, heavy sanction/war discount vs Brent
-  prices.urals = derived('urals', 'Urals Crude',             'USD/bbl', 'OTC',  '🇷🇺', brent, brentHist, -13.50);
+  // Urals -- Russian crude, heavy sanction/war discount vs Brent
+  prices.urals = derived('urals', 'Urals Crude',             'USD/bbl', 'OTC',  '??', brent, brentHist, -13.50);
 
-  // WCS — Canadian heavy sour crude, large WTI discount
+  // WCS -- Canadian heavy sour crude, large WTI discount
   if (wti) {
-    prices.wcs = derived('wcs', 'Western Canadian Select',   'USD/bbl', 'OTC',  '🇨🇦', wti, wtiHist, -18.50);
+    prices.wcs = derived('wcs', 'Western Canadian Select',   'USD/bbl', 'OTC',  '??', wti, wtiHist, -18.50);
   }
 
-  // Low Sulphur Gasoil — ICE Gasoil, USD/MT (Brent × 7.45 bbl/MT + crack spread)
+  // Low Sulphur Gasoil -- ICE Gasoil, USD/MT (Brent ? 7.45 bbl/MT + crack spread)
   const lcoPrice  = parseFloat((brent * 7.45 + 15).toFixed(2));
   const prevBrent = brentHist.length >= 2 ? brentHist[brentHist.length - 2].value : null;
   const prevLco   = prevBrent !== null ? parseFloat((prevBrent * 7.45 + 15).toFixed(2)) : null;
   prices.lco = {
-    id: 'lco', name: 'Low Sulphur Gasoil', unit: 'USD/MT', exchange: 'ICE', flag: '🚢',
+    id: 'lco', name: 'Low Sulphur Gasoil', unit: 'USD/MT', exchange: 'ICE', flag: '?',
     latest:    { price: lcoPrice, timestamp: new Date().toISOString() },
     history:   brentHist.map(h => ({ period: h.period, value: parseFloat((h.value * 7.45 + 15).toFixed(2)) })),
     change:    prevLco !== null ? parseFloat((lcoPrice - prevLco).toFixed(2)) : null,
     changePct: prevLco !== null ? parseFloat(((lcoPrice - prevLco) / prevLco * 100).toFixed(2)) : null,
-    derivedFrom: 'Brent × 7.45 + $15',
+    derivedFrom: 'Brent ? 7.45 + $15',
   };
 
-  // Bonny Light — Nigerian light sweet, premium to Brent
-  prices.bonny = derived('bonny', 'Bonny Light',             'USD/bbl', 'OTC',  '🇳🇬', brent, brentHist, +1.80);
+  // Bonny Light -- Nigerian light sweet, premium to Brent
+  prices.bonny = derived('bonny', 'Bonny Light',             'USD/bbl', 'OTC',  '??', brent, brentHist, +1.80);
 
-  // ESPO Blend — Russian Pacific crude, smaller discount than Urals
-  prices.espo  = derived('espo',  'ESPO Blend',              'USD/bbl', 'OTC',  '🇷🇺', brent, brentHist, -4.50);
+  // ESPO Blend -- Russian Pacific crude, smaller discount than Urals
+  prices.espo  = derived('espo',  'ESPO Blend',              'USD/bbl', 'OTC',  '??', brent, brentHist, -4.50);
 
   const derivedKeys = ['opec','urals','wcs','lco','bonny','espo'];
   console.log(`[derived] ${derivedKeys.map(id => `${id}=$${prices[id]?.latest?.price ?? 'MISSING'}`).join(', ')}`);
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // UTILS
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 function timeAgo(dateStr) {
   try {
@@ -396,9 +429,9 @@ function dedupeNews(articles) {
   });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 // MAIN HANDLER
-// ══════════════════════════════════════════════════════════════
+// ==============================================================
 
 export default async function handler(req, context) {
   const startTime = Date.now();
@@ -408,7 +441,7 @@ export default async function handler(req, context) {
   const store  = getStore('crude-radar');
   const errors = [];
 
-  // ── 1. PRICES (OilPriceAPI) ───────────────────────────────
+  // ?? 1. PRICES (OilPriceAPI) ???????????????????????????????
   const prices = {};
 
   if (!OILPRICE_KEY) {
@@ -445,7 +478,7 @@ export default async function handler(req, context) {
     console.log(`[prices] Live: ${live.map(p => `${p.id}=$${p.latest.price}`).join(', ')}`);
   }
 
-  // ── 2. EIA DATA ───────────────────────────────────────────
+  // ?? 2. EIA DATA ???????????????????????????????????????????
   const eia = {};
 
   if (!EIA_KEY) {
@@ -465,7 +498,7 @@ export default async function handler(req, context) {
     if (!prices.wti && eia.wti_spot_monthly?.series?.length) {
       const s = [...eia.wti_spot_monthly.series].reverse();
       prices.wti = {
-        id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '🇺🇸',
+        id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '??',
         latest:  { price: eia.wti_spot_monthly.latest.value, timestamp: eia.wti_spot_monthly.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
         change: eia.wti_spot_monthly.latest.change, changePct: eia.wti_spot_monthly.latest.changePct,
@@ -474,7 +507,7 @@ export default async function handler(req, context) {
     if (!prices.brent && eia.brent_spot_monthly?.series?.length) {
       const s = [...eia.brent_spot_monthly.series].reverse();
       prices.brent = {
-        id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '🌊',
+        id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '?',
         latest:  { price: eia.brent_spot_monthly.latest.value, timestamp: eia.brent_spot_monthly.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
         change: eia.brent_spot_monthly.latest.change, changePct: eia.brent_spot_monthly.latest.changePct,
@@ -483,7 +516,7 @@ export default async function handler(req, context) {
     if (!prices.crude_ng && eia.henry_hub_daily?.series?.length) {
       const s = [...eia.henry_hub_daily.series].slice(0, 30).reverse();
       prices.crude_ng = {
-        id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '⚡',
+        id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?',
         latest:  { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
         history: s.map(d => ({ period: d.period, value: d.value })),
         change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct,
@@ -491,15 +524,15 @@ export default async function handler(req, context) {
     }
   }
 
-  // ── 3. DERIVED PRICES ─────────────────────────────────────
+  // ?? 3. DERIVED PRICES ?????????????????????????????????????
   // Must run after both OilPriceAPI and EIA so benchmarks are available
   buildDerivedPrices(prices);
 
   const allContracts = Object.values(prices).filter(p => p.latest?.price);
-  console.log(`[prices] Total in blob: ${allContracts.length} — ${allContracts.map(p => p.id).join(', ')}`);
+  console.log(`[prices] Total in blob: ${allContracts.length} -- ${allContracts.map(p => p.id).join(', ')}`);
 
-  // ── 4. NEWS (RSS + GNews) ─────────────────────────────────
-  if (!GNEWS_KEY) console.warn('[news] GNEWS_API_KEY not set — RSS only');
+  // ?? 4. NEWS (RSS + GNews) ?????????????????????????????????
+  if (!GNEWS_KEY) console.warn('[news] GNEWS_API_KEY not set -- RSS only');
   console.log('[news] Fetching...');
 
   const newsResults = await Promise.allSettled([
@@ -529,7 +562,7 @@ export default async function handler(req, context) {
   ).slice(0, 50);
   console.log(`[news] Total after dedup: ${news.length}`);
 
-  // ── 5. TANKERS (Datalastic AIS) ───────────────────────────
+  // ?? 5. TANKERS (Datalastic AIS) ???????????????????????????
   let tankers = null;
   if (DATALASTIC_KEY) {
     console.log('[tankers] Fetching AIS...');
@@ -537,7 +570,7 @@ export default async function handler(req, context) {
     console.log(`[tankers] ${tankers ? tankers.length + ' vessels' : 'FAILED'}`);
   }
 
-  // ── 6. WRITE BLOBS ────────────────────────────────────────
+  // ?? 6. WRITE BLOBS ????????????????????????????????????????
   const duration_ms = Date.now() - startTime;
   const meta = {
     fetchedAt,
