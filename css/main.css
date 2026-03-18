@@ -1333,3 +1333,30 @@ canvas { display: block; }
   .ei-two, .ei-three, .ei-four, .cd-kpi4, .cd-bottom-grid { grid-template-columns:1fr; }
   .ei-three { grid-template-columns: 1fr 1fr; }
 }
+
+/* ====================================================================
+   EIA CHARTS PAGE
+   ==================================================================== */
+
+.eia-kpi-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 2px solid #00b0ff;
+  padding: 8px 12px;
+}
+
+.eia-kv {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin-bottom: 3px;
+}
+
+.eia-ks {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
