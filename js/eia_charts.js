@@ -102,7 +102,7 @@
   // ?? render all 4 charts ??????????????????????????????????????
   function renderAll(d) {
     if (d.invMoM && d.invMoM.length)         renderChart1(d.invMoM, d.crudeStocks);
-    if (d.crudeImports && d.crudeImports.series) renderChart2(d.crudeImports);
+    if (d.crudeImports && d.crudeImports.series) renderChart2(d.crudeImports, d.importsWeekly || []);
     if (d.naturalGas && d.naturalGas.prod)   renderChart3(d.naturalGas);
     if (d.oecdStocks && d.oecdStocks.series) renderChart4(d.oecdStocks);
   }
@@ -246,7 +246,7 @@
   }
 
   // ?? CHART 2: Crude imports by country ???????????????????????
-  function renderChart2(imports) {
+  function renderChart2(imports, importsWeekly) {
     destroyChart('eia-chart2-top');
     destroyChart('eia-chart2-trend');
 
@@ -319,8 +319,43 @@
       return months[parseInt(p.slice(5, 7), 10) - 1] + "'" + p.slice(2, 4);
     });
 
+    // If only 1 period of country data, use weekly import totals for trend
     var c2b = document.getElementById('eia-chart2-trend');
-    if (c2b) {
+    if (c2b && importsWeekly && importsWeekly.length > 4) {
+      destroyChart('eia-chart2-trend');
+      var wLabels = importsWeekly.slice(-26).map(function(d) {
+        return d.period ? d.period.slice(5) : '';
+      });
+      charts['eia-chart2-trend'] = new Chart(c2b, {
+        type: 'line',
+        data: {
+          labels: wLabels,
+          datasets: [{
+            label: 'US crude imports (kbd)',
+            data: importsWeekly.slice(-26).map(function(d) { return d.value; }),
+            borderColor: '#2a7ab0',
+            backgroundColor: 'rgba(42,122,176,0.12)',
+            borderWidth: 2,
+            pointRadius: 2,
+            tension: 0.3,
+            fill: true,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: Object.assign({}, TT, {
+              callbacks: { label: function(ctx) { return ' ' + ctx.parsed.y.toLocaleString() + ' kbd'; } },
+            }),
+          },
+          scales: {
+            x: { grid:{color:GRID}, ticks:{color:TICK,font:{family:MONO,size:9},maxTicksLimit:10}, border:{color:GRID} },
+            y: { grid:{color:GRID}, ticks:{color:TICK,font:{family:MONO,size:9},callback:function(v){return v.toLocaleString();}}, border:{color:GRID} },
+          },
+        },
+      });
+    } else if (c2b) {
       var datasets = top6.map(function (country) {
         var s = series.find(function (x) { return x.country === country; });
         return {
@@ -365,7 +400,7 @@
           },
         },
       });
-    }
+    } // end else
 
     // KPI: top importer + total
     var total = ranked.reduce(function (s, r) { return s + r.value; }, 0);
@@ -555,7 +590,7 @@
           labels: labels,
           datasets: [
             {
-              label: 'OECD Stocks (Mbbl)',
+              label: 'US Crude Inv. excl SPR (Mbbl)',
               data: series.map(function (d) { return d.value; }),
               backgroundColor: 'rgba(26,64,96,0.75)',
               borderColor: '#2a7ab0',
@@ -660,14 +695,14 @@
     }
 
     // KPI cards
-    setKpi('eia-oecd-level', latest.value ? latest.value.toLocaleString() : '-', 'Mbbl OECD total');
+    setKpi('eia-oecd-level', latest.value ? latest.value.toLocaleString() : '-', 'Mbbl US crude (excl SPR)');
     setKpi('eia-oecd-mom', latest.mom != null ? (latest.mom >= 0 ? '+' : '') + latest.mom.toFixed(1) : '-',
       'Mbbl MoM change',
       latest.mom != null ? (latest.mom >= 0 ? '#ff6b00' : '#00e676') : null);
     setKpi('eia-oecd-5yravg', latest.avg5yr ? latest.avg5yr.toLocaleString() : '-', 'Mbbl 5yr avg');
     setKpi('eia-oecd-overhang',
       latest.overhang != null ? (latest.overhang >= 0 ? '+' : '') + latest.overhang.toFixed(1) : '-',
-      latest.overhang != null ? (latest.overhang >= 0 ? 'Mbbl overhang' : 'Mbbl deficit') : 'vs 5yr avg',
+      latest.overhang != null ? (latest.overhang >= 0 ? 'Mbbl above avg' : 'Mbbl below avg') : 'vs 5yr avg',
       latest.overhang != null ? (latest.overhang >= 0 ? '#ff6b00' : '#00e676') : null);
   }
 
