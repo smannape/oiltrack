@@ -565,7 +565,7 @@
           <div style="position:relative;height:320px"><canvas id="eia-chart2-top"></canvas></div>
         </div>
         <div>
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">IMPORT TREND BY COUNTRY — 12 MONTHS (KBD STACKED)</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">US TOTAL CRUDE IMPORTS — 26 WEEKS (KBD)</div>
           <div style="position:relative;height:320px"><canvas id="eia-chart2-trend"></canvas></div>
         </div>
       </div>
@@ -601,27 +601,27 @@
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
-       CHART 4 — OECD STOCKS MoM
+       CHART 4 — US CRUDE INVENTORY MoM
   ════════════════════════════════════════════════════════ -->
   <div style="padding:10px 14px 14px">
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">OECD Commercial Stocks — Month over Month</span>
-        <span class="panel-meta" style="color:#00b0ff">EIA STEO · COSWPRS · monthly</span>
+        <span class="panel-title">US Crude Oil Inventory — Month over Month (excl SPR)</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA STEO · COSXPUS · monthly</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
-        <div class="eia-kpi-card" id="eia-oecd-level"><div class="eia-kv">—</div><div class="eia-ks">Mbbl OECD total</div></div>
+        <div class="eia-kpi-card" id="eia-oecd-level"><div class="eia-kv">—</div><div class="eia-ks">Mbbl US crude excl SPR</div></div>
         <div class="eia-kpi-card" id="eia-oecd-mom"><div class="eia-kv">—</div><div class="eia-ks">MoM change</div></div>
         <div class="eia-kpi-card" id="eia-oecd-5yravg"><div class="eia-kv">—</div><div class="eia-ks">5yr avg</div></div>
         <div class="eia-kpi-card" id="eia-oecd-overhang"><div class="eia-kv">—</div><div class="eia-ks">vs 5yr avg</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">OECD STOCK LEVEL VS 5YR AVG (MBBL)</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">US CRUDE INVENTORY VS 5YR AVG (MBBL)</div>
           <div style="position:relative;height:220px"><canvas id="eia-chart4-level"></canvas></div>
         </div>
         <div>
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">OVERHANG / DEFICIT VS 5YR AVERAGE (MBBL)</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">MONTHLY CHANGE VS 5YR AVERAGE (MBBL)</div>
           <div style="position:relative;height:220px"><canvas id="eia-chart4-mom"></canvas></div>
         </div>
       </div>
