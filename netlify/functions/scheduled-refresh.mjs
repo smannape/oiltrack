@@ -1,10 +1,6 @@
 // ============================================================
 // netlify/functions/scheduled-refresh.mjs
-//
-// Runs every hour on the hour (UTC).
-// Triggers both background data functions in parallel:
-//   1. fetch-oil-data-background — prices, EIA, news
-//   2. fetch-ais-data            — AISstream tanker positions
+// Runs every hour. Triggers all 3 background data functions.
 // ============================================================
 
 export default async function handler(req) {
@@ -17,7 +13,6 @@ export default async function handler(req) {
     return new Response('URL env not set', { status: 500 });
   }
 
-  // Fire both background functions simultaneously
   const results = await Promise.allSettled([
     fetch(`${siteUrl}/.netlify/functions/fetch-oil-data-background`, {
       method: 'POST',
@@ -27,10 +22,16 @@ export default async function handler(req) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-trigger': 'scheduled' },
     }),
+    // EIA charts refresh — runs every hour but EIA updates weekly/monthly
+    // Cheap call — if data unchanged, just re-caches same blob
+    fetch(`${siteUrl}/.netlify/functions/fetch-eia-data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-trigger': 'scheduled' },
+    }),
   ]);
 
-  const [oil, ais] = results;
-  console.log(`[scheduled-refresh] oil=${oil.status === 'fulfilled' ? oil.value?.status : oil.reason} ais=${ais.status === 'fulfilled' ? ais.value?.status : ais.reason}`);
+  const [oil, ais, eia] = results;
+  console.log(`[scheduled-refresh] oil=${oil.status} ais=${ais.status} eia=${eia.status}`);
 
   return new Response(JSON.stringify({
     triggered: true,
@@ -38,12 +39,8 @@ export default async function handler(req) {
     next_run,
     oil_status: oil.status,
     ais_status: ais.status,
-  }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
+    eia_status: eia.status,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-export const config = {
-  schedule: '0 * * * *',
-};
+export const config = { schedule: '0 * * * *' };
