@@ -78,7 +78,7 @@
   <nav>
     <a href="#" data-page="dashboard" class="active">Dashboard</a>
     <a href="#" data-page="tankers">Tankers</a>
-    <a href="#" data-page="charts">Charts</a>
+    <a href="#" data-page="charts">EIA Charts</a>
     <a href="#" data-page="stats">Statistics</a>
     <a href="#" data-page="country">Country Drilldown</a>
     <a href="#" data-page="news">News</a>
@@ -302,11 +302,16 @@
       </div>
 
       <div class="sidebar-section">
-        <div class="sidebar-title">U.S. Crude Inventory (EIA)</div>
+        <div class="sidebar-title" style="display:flex;align-items:center;gap:6px">
+          U.S. Crude Inventory
+          <span id="eia-status-badge" style="font-family:var(--font-mono);font-size:8px;padding:1px 5px;border:1px solid #ffb300;color:#ffb300;border-radius:2px;letter-spacing:1px">LOADING</span>
+        </div>
         <div id="inventory-widget" style="padding:4px 0">
-          <div style="font-family:var(--font-display);font-size:22px;color:var(--text-bright)">432.1M</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-green);margin-top:3px">▼ 3.2M bbl WoW</div>
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">EIA · Loading live data…</div>
+          <div style="font-family:var(--font-display);font-size:22px;color:var(--text-bright)" id="inventory-widget-val">—</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px" id="inventory-widget-sub">Loading…</div>
+          <div style="font-family:var(--font-mono);font-size:10px;margin-top:3px" id="inventory-widget-wow">—</div>
+          <div style="font-family:var(--font-mono);font-size:10px;margin-top:2px" id="inventory-widget-yoy" style="color:var(--text-dim)">—</div>
+          <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-top:3px" id="inventory-widget-meta">EIA API v2</div>
         </div>
       </div>
 
@@ -500,105 +505,133 @@
 
 <!-- ===== PAGE: CHARTS ===== -->
 <div id="page-charts" class="page">
-  <div class="charts-grid">
-    <!-- WTI -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">🇺🇸 WTI Crude Oil</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-wti-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-wti-chg"></span>
+
+  <!-- ── Status bar ─────────────────────────────────────── -->
+  <div style="background:var(--bg-panel);border-bottom:1px solid var(--border);padding:5px 14px;display:flex;align-items:center;gap:16px;font-family:var(--font-mono);font-size:9px">
+    <span style="color:var(--text-dim)">EIA API v2</span>
+    <span style="color:var(--text-dim)">Series: PETROLEUM · CRUDE-OIL-IMPORTS · NATURAL-GAS · STEO</span>
+    <span id="eia-last-updated" style="color:var(--text-dim);margin-left:auto">—</span>
+    <button onclick="fetch('/api/eia-refresh',{method:'POST'}).then(()=>location.reload())" style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;border-radius:2px">REFRESH</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CHART 1 — US CRUDE INVENTORY MoM
+  ════════════════════════════════════════════════════════ -->
+  <div style="padding:10px 14px 0">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">US Crude Oil Inventory — Month over Month (1 year)</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA · petroleum/sum/snd/epco/sae/nus/mbbl · weekly</span>
+      </div>
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-inv-latest"><div class="eia-kv">—</div><div class="eia-ks">Mbbl latest stock</div></div>
+        <div class="eia-kpi-card" id="eia-inv-mom"><div class="eia-kv">—</div><div class="eia-ks">MoM change</div></div>
+        <div class="eia-kpi-card" id="eia-inv-52avg"><div class="eia-kv">—</div><div class="eia-ks">52wk average</div></div>
+        <div class="eia-kpi-card" id="eia-inv-overhang"><div class="eia-kv">—</div><div class="eia-ks">vs 52wk avg</div></div>
+      </div>
+      <!-- Charts side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">MONTH OVER MONTH CHANGE (MBBL)</div>
+          <div style="position:relative;height:200px"><canvas id="eia-chart1-mom"></canvas></div>
         </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-          <button class="tf-btn">3M</button>
-          <button class="tf-btn">1Y</button>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">52-WEEK STOCK LEVEL (MBBL)</div>
+          <div style="position:relative;height:200px"><canvas id="eia-chart1-level"></canvas></div>
         </div>
       </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-wti"></canvas></div>
-    </div>
-    <!-- BRENT -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">🌊 Brent Crude Oil</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-brent-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-brent-chg"></span>
-        </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-          <button class="tf-btn">3M</button>
-          <button class="tf-btn">1Y</button>
-        </div>
-      </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-brent"></canvas></div>
-    </div>
-    <!-- DUBAI -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">🇦🇪 Dubai Crude</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-dubai-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-dubai-chg"></span>
-        </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-          <button class="tf-btn">3M</button>
-        </div>
-      </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-dubai"></canvas></div>
-    </div>
-    <!-- NATGAS -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">⚡ Natural Gas (NYMEX)</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-natgas-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-natgas-chg"></span>
-        </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-          <button class="tf-btn">3M</button>
-        </div>
-      </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-natgas"></canvas></div>
-    </div>
-    <!-- RBOB -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">⛽ RBOB Gasoline</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-rbob-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-rbob-chg"></span>
-        </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-        </div>
-      </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-rbob"></canvas></div>
-    </div>
-    <!-- HEATING OIL -->
-    <div class="chart-card">
-      <div class="chart-card-header">
-        <span class="chart-card-title">🔥 Heating Oil</span>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-family:var(--font-mono);font-size:18px;color:var(--text-bright)" id="chart-heatoil-price">—</span>
-          <span style="font-family:var(--font-mono);font-size:11px" id="chart-heatoil-chg"></span>
-        </div>
-        <div class="chart-timeframe">
-          <button class="tf-btn active">1W</button>
-          <button class="tf-btn">1M</button>
-        </div>
-      </div>
-      <div class="chart-canvas-wrap"><canvas id="chart-heatoil"></canvas></div>
     </div>
   </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CHART 2 — CRUDE IMPORTS BY COUNTRY
+  ════════════════════════════════════════════════════════ -->
+  <div style="padding:10px 14px 0">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">US Crude Oil Imports by Country</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA · crude-oil-imports/data · monthly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-imp-top"><div class="eia-kv">—</div><div class="eia-ks">Top supplier</div></div>
+        <div class="eia-kpi-card" id="eia-imp-total"><div class="eia-kv">—</div><div class="eia-ks">Total imports</div></div>
+        <div class="eia-kpi-card" id="eia-imp-period"><div class="eia-kv">—</div><div class="eia-ks">Latest period</div></div>
+        <div class="eia-kpi-card" id="eia-imp-sources"><div class="eia-kv">—</div><div class="eia-ks">Source countries</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">TOP 10 ORIGINS — LATEST MONTH (KBD)</div>
+          <div style="position:relative;height:320px"><canvas id="eia-chart2-top"></canvas></div>
+        </div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">IMPORT TREND BY COUNTRY — 12 MONTHS (KBD STACKED)</div>
+          <div style="position:relative;height:320px"><canvas id="eia-chart2-trend"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CHART 3 — NATURAL GAS
+  ════════════════════════════════════════════════════════ -->
+  <div style="padding:10px 14px 0">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Natural Gas — Production, Consumption &amp; Storage</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA · natural-gas/prod · cons · stor/wkly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-ng-prod"><div class="eia-kv">—</div><div class="eia-ks">Bcf production</div></div>
+        <div class="eia-kpi-card" id="eia-ng-cons"><div class="eia-kv">—</div><div class="eia-ks">Bcf consumption</div></div>
+        <div class="eia-kpi-card" id="eia-ng-stor"><div class="eia-kv">—</div><div class="eia-ks">Bcf in storage</div></div>
+        <div class="eia-kpi-card" id="eia-ng-storwow"><div class="eia-kv">—</div><div class="eia-ks">WoW storage</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">PRODUCTION VS CONSUMPTION — 18 MONTHS (BCF)</div>
+          <div style="position:relative;height:220px"><canvas id="eia-chart3-prodcons"></canvas></div>
+        </div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">WORKING GAS IN STORAGE VS 5YR AVG (BCF)</div>
+          <div style="position:relative;height:220px"><canvas id="eia-chart3-stor"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CHART 4 — OECD STOCKS MoM
+  ════════════════════════════════════════════════════════ -->
+  <div style="padding:10px 14px 14px">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">OECD Commercial Stocks — Month over Month</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA STEO · COSWPRS · monthly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-oecd-level"><div class="eia-kv">—</div><div class="eia-ks">Mbbl OECD total</div></div>
+        <div class="eia-kpi-card" id="eia-oecd-mom"><div class="eia-kv">—</div><div class="eia-ks">MoM change</div></div>
+        <div class="eia-kpi-card" id="eia-oecd-5yravg"><div class="eia-kv">—</div><div class="eia-ks">5yr avg</div></div>
+        <div class="eia-kpi-card" id="eia-oecd-overhang"><div class="eia-kv">—</div><div class="eia-ks">vs 5yr avg</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">OECD STOCK LEVEL VS 5YR AVG (MBBL)</div>
+          <div style="position:relative;height:220px"><canvas id="eia-chart4-level"></canvas></div>
+        </div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-bottom:6px;letter-spacing:1px">OVERHANG / DEFICIT VS 5YR AVERAGE (MBBL)</div>
+          <div style="position:relative;height:220px"><canvas id="eia-chart4-mom"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
+
+
+<!-- ===== PAGE: STATISTICS ===== -->
 
 <!-- ===== PAGE: STATISTICS ===== -->
 <div id="page-stats" class="page">
@@ -864,6 +897,7 @@
 <script src="js/ei_stats_data.js"></script>
   <script src="js/api.js"></script>
 <script src="js/ei_stats_page.js"></script>
+<script src="js/eia_charts.js"></script>
 <script src="js/app.js"></script>
 <script>
   // Populate full news page on load
