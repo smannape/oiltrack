@@ -16,10 +16,9 @@
     mapLayers:         { tankers: null, production: null, consumption: null },
     contracts:         JSON.parse(JSON.stringify(CrudeRadar.contracts)),
     liveDataActive:    false,   // true once real prices arrive → stops simulation
-    chartsInitialized: false,
     statsInitialized:  false,
     countryInitialized: false,
-    chartsInitialized: false,
+    eiaChartsInitialized: false,
     liveNews:          [],
     telegramNews:      [],
     fxRates:           null,
@@ -799,8 +798,8 @@
   }
 
   function initEIACharts() {
-    if (state.chartsInitialized) return;
-    state.chartsInitialized = true;
+    if (state.eiaChartsInitialized) return;
+    state.eiaChartsInitialized = true;
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         if (typeof window.initEIAChartsPage === 'function') window.initEIAChartsPage();
