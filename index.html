@@ -833,28 +833,113 @@
 
 <!-- ===== PAGE: NEWS ===== -->
 <div id="page-news" class="page">
-  <div style="padding:12px;max-width:900px;margin:0 auto">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Oil & Gas News Feed</span>
-        <span class="live-badge">LIVE</span>
+
+  <!-- top row: donut chart + filters -->
+  <div class="nws-top">
+
+    <!-- Left: donut + legend + kpis -->
+    <div class="nws-chart-panel">
+      <div class="nws-panel-title">News coverage by region</div>
+      <div class="nws-panel-sub">% of articles &bull; last 21 days</div>
+      <div class="nws-donut-wrap">
+        <canvas id="news-donut-chart"></canvas>
+        <div class="nws-donut-center">
+          <div class="nws-donut-num" id="nws-total-num">--</div>
+          <div class="nws-donut-lbl">articles</div>
+        </div>
       </div>
-      <div style="padding:10px 12px">
-        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-          <button class="map-btn active">All</button>
-          <button class="map-btn">OPEC</button>
-          <button class="map-btn">Prices</button>
-          <button class="map-btn">Tankers</button>
-          <button class="map-btn">LNG</button>
-          <button class="map-btn">Shale</button>
-          <button class="map-btn">Refinery</button>
-        </div>
-        <!-- Expanded news list -->
-        <div id="news-full-list">
-          <!-- populated by JS -->
-        </div>
+      <div class="nws-legend" id="nws-legend">
+        <div class="nws-legend-row"><span class="nws-leg-dot" style="background:#c07020"></span><span class="nws-leg-name">Middle East &amp; N.Africa</span><span class="nws-leg-pct" id="nws-pct-mena">--</span></div>
+        <div class="nws-legend-row"><span class="nws-leg-dot" style="background:#2a7ab0"></span><span class="nws-leg-name">North America</span><span class="nws-leg-pct" id="nws-pct-na">--</span></div>
+        <div class="nws-legend-row"><span class="nws-leg-dot" style="background:#3a8010"></span><span class="nws-leg-name">Europe</span><span class="nws-leg-pct" id="nws-pct-eu">--</span></div>
+        <div class="nws-legend-row"><span class="nws-leg-dot" style="background:#502880"></span><span class="nws-leg-name">Asia Pacific</span><span class="nws-leg-pct" id="nws-pct-ap">--</span></div>
+      </div>
+      <div class="nws-kpi-row">
+        <div class="nws-kpi"><div class="nws-kpi-val" id="nws-kpi-total">--</div><div class="nws-kpi-lbl">Total</div></div>
+        <div class="nws-kpi"><div class="nws-kpi-val" style="color:var(--accent-red)" id="nws-kpi-breaking">--</div><div class="nws-kpi-lbl">Breaking</div></div>
+        <div class="nws-kpi"><div class="nws-kpi-val" id="nws-kpi-sources">30</div><div class="nws-kpi-lbl">Sources</div></div>
       </div>
     </div>
+
+    <!-- Right: filter controls -->
+    <div class="nws-filter-panel">
+      <div class="nws-filter-row">
+        <span class="nws-filter-lbl">Region</span>
+        <div class="nws-filter-btns" id="nws-region-btns">
+          <button class="nws-fbtn active" data-region="ALL">All regions</button>
+          <button class="nws-fbtn" data-region="MENA">Middle East &amp; N.Africa</button>
+          <button class="nws-fbtn" data-region="NA">North America</button>
+          <button class="nws-fbtn" data-region="EU">Europe</button>
+          <button class="nws-fbtn" data-region="AP">Asia Pacific</button>
+        </div>
+      </div>
+      <div class="nws-filter-row">
+        <span class="nws-filter-lbl">Topic</span>
+        <div class="nws-filter-btns" id="nws-topic-btns">
+          <button class="nws-fbtn active" data-topic="ALL">All</button>
+          <button class="nws-fbtn" data-topic="MARKET">Market</button>
+          <button class="nws-fbtn" data-topic="SUPPLY">Supply</button>
+          <button class="nws-fbtn" data-topic="PRICE">Prices</button>
+          <button class="nws-fbtn" data-topic="GAS">Gas</button>
+          <button class="nws-fbtn" data-topic="MIDEAST">OPEC/MENA</button>
+        </div>
+      </div>
+      <div class="nws-filter-row">
+        <span class="nws-filter-lbl">Sort</span>
+        <div class="nws-filter-btns" id="nws-sort-btns">
+          <button class="nws-fbtn active" data-sort="newest">Newest</button>
+          <button class="nws-fbtn" data-sort="region">By region</button>
+          <button class="nws-fbtn" data-sort="source">By source</button>
+        </div>
+        <input id="nws-search" type="text" placeholder="Search headlines..." class="nws-search">
+        <span class="nws-count-badge" id="news-count-label"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4-column regional grid -->
+  <div class="nws-regions-grid" id="nws-regions-grid">
+
+    <div class="nws-region-col" id="nws-col-mena">
+      <div class="nws-region-hdr" style="border-left:3px solid #c07020">
+        <span class="nws-region-dot" style="background:#c07020"></span>
+        <span class="nws-region-name" style="color:#e8b84b">Middle East &amp; N.Africa</span>
+        <span class="nws-region-count" id="nws-count-mena">0</span>
+      </div>
+      <div class="nws-items" id="nws-items-mena"></div>
+    </div>
+
+    <div class="nws-region-col" id="nws-col-eu">
+      <div class="nws-region-hdr" style="border-left:3px solid #3a8010">
+        <span class="nws-region-dot" style="background:#3a8010"></span>
+        <span class="nws-region-name" style="color:#5a9040">Europe</span>
+        <span class="nws-region-count" id="nws-count-eu">0</span>
+      </div>
+      <div class="nws-items" id="nws-items-eu"></div>
+    </div>
+
+    <div class="nws-region-col" id="nws-col-na">
+      <div class="nws-region-hdr" style="border-left:3px solid #2a7ab0">
+        <span class="nws-region-dot" style="background:#2a7ab0"></span>
+        <span class="nws-region-name" style="color:#4a9ab0">North America</span>
+        <span class="nws-region-count" id="nws-count-na">0</span>
+      </div>
+      <div class="nws-items" id="nws-items-na"></div>
+    </div>
+
+    <div class="nws-region-col" id="nws-col-ap">
+      <div class="nws-region-hdr" style="border-left:3px solid #502880">
+        <span class="nws-region-dot" style="background:#502880"></span>
+        <span class="nws-region-name" style="color:#8060b0">Asia Pacific</span>
+        <span class="nws-region-count" id="nws-count-ap">0</span>
+      </div>
+      <div class="nws-items" id="nws-items-ap"></div>
+    </div>
+
+  </div>
+
+  <div style="padding:6px 14px 14px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-align:right">
+    30 RSS sources &bull; auto-refreshed hourly &bull; last 21 days &bull; not financial advice
   </div>
 </div>
 
@@ -866,7 +951,7 @@
   <div class="status-item" id="api-status-eia"><div class="status-dot warn"></div>EIA DEMO</div>
   <div class="status-item"><div class="status-dot"></div>MAP: CARTO/OSM</div>
   <div class="status-item" style="margin-left:auto">
-    <span>APIs: Alpha Vantage · EIA · GNews · OPEC RSS · IEA RSS · ExchangeRate-API · Netlify Functions (auto-refresh 6h)</span>
+    <span>30 RSS feeds: OilPrice · Rigzone · Energy Voice · MEES · Drilling Contractor + 25 more · EIA API · GNews · Auto-refresh hourly</span>
   </div>
   <div class="status-item">
     <span style="color:var(--text-dim)">Informational only · Not financial advice</span>
