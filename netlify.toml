@@ -76,6 +76,18 @@
 # Telegram webhook is accessed directly at /.netlify/functions/telegram-webhook
 # No redirect needed — Netlify functions are auto-accessible at that path
 
+
+[[redirects]]
+  from   = "/api/eia-charts"
+  to     = "/.netlify/functions/get-eia-data"
+  status = 200
+
+[[redirects]]
+  from   = "/api/eia-refresh"
+  to     = "/.netlify/functions/get-eia-data"
+  status = 200
+  force  = true
+
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
