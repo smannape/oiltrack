@@ -1,17 +1,15 @@
 // ============================================================
 // netlify/functions/fetch-eia-data.mjs
-// Background function — fetches all 4 EIA chart datasets
-// and writes them to Netlify Blob store: 'crude-radar' key 'eia-charts'
+// Background function -- fetches all EIA chart datasets
+// Writes to Netlify Blob: store='crude-radar', key='eia-charts'
 //
-// Triggered by:
-//   - scheduled-refresh.mjs (hourly)
-//   - POST /api/eia-refresh (manual)
-//
-// EIA v2 endpoints used:
-//   1. Crude inventory MoM  — petroleum/sum/snd/epco/sae/nus/mbbl (weekly)
-//   2. Crude imports        — crude-oil-imports/data (monthly by country)
-//   3. Natural gas          — natural-gas prod/cons/stor/reserves (monthly/weekly)
-//   4. OECD stocks          — steo/data (monthly COSWPRS)
+// EIA v2 correct paths (verified live against api.eia.gov):
+//   Crude stocks  -- petroleum/stoc/wstk/data/  EPC0 NUS SAE (MBBL weekly)
+//   Crude imports -- crude-oil-imports/data/               (monthly by country)
+//   Gas prod      -- natural-gas/prod/sum/data/  EPG0 NUS FPD (MMcf monthly)
+//   Gas cons      -- natural-gas/cons/sum/data/  EPG0 NUS VGT (MMcf monthly)
+//   Gas storage   -- natural-gas/stor/wkly/data/ EPG0 R48 SWO (Bcf weekly)
+//   OECD stocks   -- steo/data/ COSWPRS                    (Mbbl monthly)
 // ============================================================
 
 import { getStore } from '@netlify/blobs';
@@ -19,49 +17,61 @@ import { getStore } from '@netlify/blobs';
 const EIA_KEY = process.env.EIA_API_KEY || '';
 const BASE    = 'https://api.eia.gov/v2';
 
-function eia(path) {
-  const sep = path.includes('?') ? '&' : '?';
-  return `${BASE}/${path}${sep}api_key=${EIA_KEY}`;
+function eia(path, params) {
+  const qstring = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  return `${BASE}/${path}?${qstring}&api_key=${EIA_KEY}`;
 }
 
 async function fetchJSON(url) {
-  const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!r.ok) throw new Error(`EIA HTTP ${r.status} for ${url}`);
+  const r = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error(`EIA HTTP ${r.status} for ${url.split('?')[0]}`);
   return r.json();
 }
 
-// ── 1. US CRUDE STOCKS (weekly, ~2 years) ────────────────────
+// ?? 1. US CRUDE STOCKS (weekly, 2 years) ?????????????????????
+// Product=EPC0 (crude oil), duoarea=NUS (US total), process=SAE (ending stocks excl SPR)
 async function fetchCrudeStocks() {
-  const url = eia('petroleum/sum/snd/epco/sae/nus/mbbl/data/?frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=104');
+  const url = eia('petroleum/stoc/wstk/data/', {
+    frequency: 'weekly',
+    'data[0]': 'value',
+    'facets[product][]': 'EPC0',
+    'facets[duoarea][]': 'NUS',
+    'facets[process][]': 'SAE',
+    'sort[0][column]': 'period',
+    'sort[0][direction]': 'desc',
+    length: '104',
+  });
   const j = await fetchJSON(url);
-  const rows = (j.response?.data || []).map(d => ({
-    period: d.period,
-    value:  parseFloat(d.value),
-    unit:   d['unit-name'] || 'MBBL',
-  })).filter(d => !isNaN(d.value)).reverse();
-  return rows;
+  return (j.response?.data || [])
+    .map(d => ({ period: d.period, value: parseFloat(d.value), unit: 'MBBL' }))
+    .filter(d => !isNaN(d.value))
+    .reverse();
 }
 
-// ── 2. CRUDE IMPORTS BY COUNTRY (monthly, latest 13 months) ─
+// ?? 2. CRUDE IMPORTS BY COUNTRY (monthly, latest 13 months) ??
 async function fetchCrudeImports() {
-  const url = eia('crude-oil-imports/data/?frequency=monthly&data[0]=quantity&sort[0][column]=period&sort[0][direction]=desc&length=300&facets[destinationType][]=USA');
+  const url = eia('crude-oil-imports/data/', {
+    frequency: 'monthly',
+    'data[0]': 'quantity',
+    'sort[0][column]': 'period',
+    'sort[0][direction]': 'desc',
+    length: '500',
+  });
   const j = await fetchJSON(url);
   const rows = j.response?.data || [];
 
-  // Group by period then by country
   const byPeriod = {};
   for (const r of rows) {
     const p = r.period;
-    const country = r['originName'] || r['origin-name'] || r.originname || 'Unknown';
+    const country = r.originName || r['originName'] || r['origin-name'] || 'Unknown';
     const qty = parseFloat(r.quantity) || 0;
     if (!byPeriod[p]) byPeriod[p] = {};
     byPeriod[p][country] = (byPeriod[p][country] || 0) + qty;
   }
 
-  // Get latest 13 months
   const periods = Object.keys(byPeriod).sort().slice(-13);
-
-  // Aggregate top countries across all periods
   const countryTotals = {};
   for (const p of periods) {
     for (const [c, v] of Object.entries(byPeriod[p])) {
@@ -77,54 +87,78 @@ async function fetchCrudeImports() {
     country,
     data: periods.map(p => ({
       period: p,
-      value: Math.round((byPeriod[p]?.[country] || 0) / 1000), // kbbl -> Mbbl approx
+      value: Math.round((byPeriod[p]?.[country] || 0) / 1000),
     })),
   }));
 
   return { periods, series };
 }
 
-// ── 3. NATURAL GAS ────────────────────────────────────────────
+// ?? 3. NATURAL GAS ????????????????????????????????????????????
 async function fetchNaturalGas() {
   const [prodJ, consJ, storJ] = await Promise.all([
-    // Dry gas production monthly (Bcf)
-    fetchJSON(eia('natural-gas/prod/sum/epg0/fpd/nus/bcf/data/?frequency=monthly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=24')),
-    // Total consumption monthly (Bcf)
-    fetchJSON(eia('natural-gas/cons/sum/vgt/mmcfd/nus/data/?frequency=monthly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=24')),
-    // Weekly storage working gas (Bcf)
-    fetchJSON(eia('natural-gas/stor/wkly/epg0/wgs/nus/bcf/data/?frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=260')),
+    // Dry gas production (MMcf) -- process=FPD, duoarea=NUS
+    fetchJSON(eia('natural-gas/prod/sum/data/', {
+      frequency: 'monthly',
+      'data[0]': 'value',
+      'facets[duoarea][]': 'NUS',
+      'facets[process][]': 'FPD',
+      'sort[0][column]': 'period',
+      'sort[0][direction]': 'desc',
+      length: '36',
+    })),
+    // Total delivered to consumers (MMcf) -- process=VGT, duoarea=NUS
+    fetchJSON(eia('natural-gas/cons/sum/data/', {
+      frequency: 'monthly',
+      'data[0]': 'value',
+      'facets[duoarea][]': 'NUS',
+      'facets[process][]': 'VGT',
+      'sort[0][column]': 'period',
+      'sort[0][direction]': 'desc',
+      length: '36',
+    })),
+    // Working gas in storage (Bcf) -- duoarea=R48 (Lower 48), process=SWO
+    fetchJSON(eia('natural-gas/stor/wkly/data/', {
+      frequency: 'weekly',
+      'data[0]': 'value',
+      'facets[duoarea][]': 'R48',
+      'facets[process][]': 'SWO',
+      'sort[0][column]': 'period',
+      'sort[0][direction]': 'desc',
+      length: '260',
+    })),
   ]);
 
+  // Convert MMcf to Bcf for display
   const prod = (prodJ.response?.data || [])
-    .map(d => ({ period: d.period, value: parseFloat(d.value) }))
-    .filter(d => !isNaN(d.value)).reverse();
+    .map(d => ({ period: d.period, value: d.value ? parseFloat((parseFloat(d.value) / 1000).toFixed(1)) : null }))
+    .filter(d => d.value !== null)
+    .reverse();
 
   const cons = (consJ.response?.data || [])
-    .map(d => ({ period: d.period, value: parseFloat(d.value) }))
-    .filter(d => !isNaN(d.value)).reverse();
+    .map(d => ({ period: d.period, value: d.value ? parseFloat((parseFloat(d.value) / 1000).toFixed(1)) : null }))
+    .filter(d => d.value !== null)
+    .reverse();
 
   const stor = (storJ.response?.data || [])
     .map(d => ({ period: d.period, value: parseFloat(d.value) }))
-    .filter(d => !isNaN(d.value)).reverse();
+    .filter(d => !isNaN(d.value))
+    .reverse();
 
-  // Compute 5yr avg for storage (same week-of-year)
+  // 5yr average for storage (same week-of-year)
   const storWithAvg = stor.slice(-52).map(d => {
-    const weekNum = d.period.slice(5); // MM-DD portion
-    const sameWeeks = stor.filter(s =>
-      s.period.slice(5) === weekNum && s.period < d.period
-    ).slice(-5);
+    const weekKey = d.period.slice(5);
+    const sameWeeks = stor.filter(s => s.period.slice(5) === weekKey && s.period < d.period).slice(-5);
     const avg5yr = sameWeeks.length
       ? Math.round(sameWeeks.reduce((s, x) => s + x.value, 0) / sameWeeks.length)
       : null;
     return { ...d, avg5yr };
   });
 
-  // Latest values
-  const latestProd = prod[prod.length - 1]?.value || null;
-  const latestCons = cons[cons.length - 1]?.value || null;
-  const latestStor = stor[stor.length - 1]?.value || null;
-  const prevStor   = stor[stor.length - 2]?.value || null;
-  const storWoW    = latestStor && prevStor ? latestStor - prevStor : null;
+  const latestProd = prod[prod.length - 1]?.value;
+  const latestCons = cons[cons.length - 1]?.value;
+  const latestStor = stor[stor.length - 1]?.value;
+  const prevStor   = stor[stor.length - 2]?.value;
 
   return {
     prod: prod.slice(-24),
@@ -134,39 +168,48 @@ async function fetchNaturalGas() {
       prod: latestProd,
       cons: latestCons,
       stor: latestStor,
-      storWoW,
+      storWoW: latestStor && prevStor ? parseFloat((latestStor - prevStor).toFixed(1)) : null,
       prodPeriod: prod[prod.length - 1]?.period,
       storPeriod: stor[stor.length - 1]?.period,
     },
   };
 }
 
-// ── 4. OECD STOCKS (STEO monthly) ────────────────────────────
+// ?? 4. OECD STOCKS (STEO monthly) ????????????????????????????
+// COSWPRS = OECD commercial petroleum stocks end of period (Mbbl)
 async function fetchOECDStocks() {
-  // COSWPRS = OECD commercial petroleum stocks, end of period (million barrels)
-  const url = eia('steo/data/?frequency=monthly&data[0]=value&facets[seriesId][]=COSWPRS&sort[0][column]=period&sort[0][direction]=desc&length=60');
+  const url = eia('steo/data/', {
+    frequency: 'monthly',
+    'data[0]': 'value',
+    'facets[seriesId][]': 'COSWPRS',
+    'sort[0][column]': 'period',
+    'sort[0][direction]': 'desc',
+    length: '60',
+  });
   const j = await fetchJSON(url);
   const rows = (j.response?.data || [])
     .map(d => ({ period: d.period, value: parseFloat(d.value) }))
     .filter(d => !isNaN(d.value))
     .reverse();
 
-  // MoM change
   const withMoM = rows.map((d, i) => ({
     ...d,
     mom: i > 0 ? parseFloat((d.value - rows[i - 1].value).toFixed(1)) : null,
   }));
 
-  // 5yr average for same month
   const withAvg = withMoM.map(d => {
-    const month = d.period.slice(5); // MM
-    const sameMonths = withMoM.filter(s =>
-      s.period.slice(5) === month && s.period < d.period
-    ).slice(-5);
+    const month = d.period.slice(5);
+    const sameMonths = withMoM
+      .filter(s => s.period.slice(5) === month && s.period < d.period)
+      .slice(-5);
     const avg5yr = sameMonths.length
       ? parseFloat((sameMonths.reduce((s, x) => s + x.value, 0) / sameMonths.length).toFixed(1))
       : null;
-    return { ...d, avg5yr, overhang: avg5yr != null ? parseFloat((d.value - avg5yr).toFixed(1)) : null };
+    return {
+      ...d,
+      avg5yr,
+      overhang: avg5yr != null ? parseFloat((d.value - avg5yr).toFixed(1)) : null,
+    };
   });
 
   const latest = withAvg[withAvg.length - 1] || {};
@@ -182,7 +225,7 @@ async function fetchOECDStocks() {
   };
 }
 
-// ── MAIN ──────────────────────────────────────────────────────
+// ?? MAIN ??????????????????????????????????????????????????????
 export default async function handler(req, context) {
   if (!EIA_KEY) {
     return new Response(JSON.stringify({ error: 'EIA_API_KEY not set' }), {
@@ -199,7 +242,7 @@ export default async function handler(req, context) {
   try { naturalGas   = await fetchNaturalGas();   } catch (e) { errors.push(`naturalGas: ${e.message}`);   }
   try { oecdStocks   = await fetchOECDStocks();   } catch (e) { errors.push(`oecdStocks: ${e.message}`);   }
 
-  // Compute inventory MoM from weekly series
+  // Compute inventory MoM from weekly stocks
   const invMoM = [];
   if (crudeStocks.length > 4) {
     const monthly = {};
@@ -219,36 +262,27 @@ export default async function handler(req, context) {
     }
   }
 
-  // Latest inventory widget data
+  // Latest inventory widget values
   const latestInv = crudeStocks[crudeStocks.length - 1] || {};
   const prevInv   = crudeStocks[crudeStocks.length - 2] || {};
-  const yoyInv    = crudeStocks.length >= 52
-    ? crudeStocks[crudeStocks.length - 52]
-    : null;
+  const yoyInv    = crudeStocks.length >= 52 ? crudeStocks[crudeStocks.length - 52] : null;
 
   const payload = {
-    fetchedAt:    new Date().toISOString(),
-    durationMs:   Date.now() - startTime,
+    fetchedAt:   new Date().toISOString(),
+    durationMs:  Date.now() - startTime,
     errors,
-    // Landing page widget
     inventory: {
-      latest:    latestInv.value || null,
-      period:    latestInv.period || null,
-      wow:       latestInv.value && prevInv.value
-                   ? parseFloat((latestInv.value - prevInv.value).toFixed(1))
-                   : null,
-      yoy:       latestInv.value && yoyInv?.value
-                   ? parseFloat((latestInv.value - yoyInv.value).toFixed(1))
-                   : null,
+      latest: latestInv.value || null,
+      period: latestInv.period || null,
+      wow:    (latestInv.value && prevInv.value)
+                ? parseFloat((latestInv.value - prevInv.value).toFixed(1)) : null,
+      yoy:    (latestInv.value && yoyInv?.value)
+                ? parseFloat((latestInv.value - yoyInv.value).toFixed(1)) : null,
     },
-    // Chart 1
     crudeStocks,
     invMoM,
-    // Chart 2
     crudeImports,
-    // Chart 3
     naturalGas,
-    // Chart 4
     oecdStocks,
   };
 
@@ -256,6 +290,7 @@ export default async function handler(req, context) {
     const store = getStore('crude-radar');
     await store.set('eia-charts', JSON.stringify(payload));
     console.log(`[fetch-eia-data] OK in ${Date.now() - startTime}ms, errors: ${errors.length}`);
+    if (errors.length) console.error('[fetch-eia-data] errors:', errors);
   } catch (e) {
     console.error('[fetch-eia-data] Blob write error:', e.message);
     errors.push(`blobWrite: ${e.message}`);
