@@ -1,12 +1,12 @@
 // ============================================================
-// CRUDE RADAR — js/app.js
+// CRUDE RADAR -- js/app.js
 // Single clean IIFE. No code outside the closure.
 // ============================================================
 
 (function () {
   'use strict';
 
-  // ── STATE ──────────────────────────────────────────────────
+  // ?? STATE ??????????????????????????????????????????????????
   const state = {
     page:              'dashboard',
     user:              null,
@@ -15,7 +15,7 @@
     map:               null,
     mapLayers:         { tankers: null, production: null, consumption: null },
     contracts:         JSON.parse(JSON.stringify(CrudeRadar.contracts)),
-    liveDataActive:    false,   // true once real prices arrive → stops simulation
+    liveDataActive:    false,   // true once real prices arrive -> stops simulation
     statsInitialized:  false,
     countryInitialized: false,
     eiaChartsInitialized: false,
@@ -29,7 +29,7 @@
     ],
   };
 
-  // ── BOOT ───────────────────────────────────────────────────
+  // ?? BOOT ???????????????????????????????????????????????????
   document.addEventListener('DOMContentLoaded', () => {
     buildTicker();
     startClock();
@@ -47,9 +47,9 @@
     setTimeout(initTelegramFeed, 3000);
   });
 
-  // ════════════════════════════════════════════════════════════
-  // LIVE DATA — reads from Netlify Blob endpoints
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
+  // LIVE DATA -- reads from Netlify Blob endpoints
+  // ============================================================
   async function fetchLiveData() {
     console.log('[CrudeRadar] Fetching live data...');
 
@@ -62,7 +62,7 @@
         CrudeAPI.fetchFX(),              // ExchangeRate-API
       ]);
 
-    // ── Prices ──────────────────────────────────────────────
+    // ?? Prices ??????????????????????????????????????????????
     const parsedPrices = CrudeAPI.parsePriceCache(
       pricesResult.status === 'fulfilled' ? pricesResult.value : null
     );
@@ -74,7 +74,7 @@
       setStatusBadge('api-status-prices', 'demo', 'PRICES DEMO');
     }
 
-    // ── News ────────────────────────────────────────────────
+    // ?? News ????????????????????????????????????????????????
     const parsedNews = CrudeAPI.parseNewsCache(
       newsResult.status === 'fulfilled' ? newsResult.value : null
     );
@@ -90,7 +90,7 @@
       setStatusBadge('api-status-news', 'demo', 'NEWS DEMO');
     }
 
-    // ── EIA ─────────────────────────────────────────────────
+    // ?? EIA ?????????????????????????????????????????????????
     const parsedEIA = CrudeAPI.parseEIACache(
       eiaResult.status === 'fulfilled' ? eiaResult.value : null
     );
@@ -101,14 +101,14 @@
       setStatusBadge('api-status-eia', 'demo', 'EIA DEMO');
     }
 
-    // ── Tankers (from AISstream Blob) ───────────────────────
+    // ?? Tankers (from AISstream Blob) ???????????????????????
     if (tankersResult.status === 'fulfilled' && Array.isArray(tankersResult.value)) {
       applyLiveTankers(tankersResult.value);
     } else {
       setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
     }
 
-    // ── FX ──────────────────────────────────────────────────
+    // ?? FX ??????????????????????????????????????????????????
     if (fxResult.status === 'fulfilled' && fxResult.value) {
       state.fxRates = fxResult.value;
       updateFXDisplay();
@@ -118,7 +118,7 @@
     setTimeout(fetchLiveData, 5 * 60 * 1000);
   }
 
-  // ── APPLY LIVE TANKERS ───────────────────────────────────
+  // ?? APPLY LIVE TANKERS ???????????????????????????????????
   function applyLiveTankers(tankers) {
     if (!tankers?.length) return;
 
@@ -126,18 +126,18 @@
       mmsi:        String(t.mmsi || ''),
       name:        t.name        || 'UNKNOWN',
       type:        t.vesselClass || t.type || 'Tanker',
-      flag:        t.flag        || '🚢',
+      flag:        t.flag        || '?',
       cargo:       t.cargo       || 'Crude Oil',
       lat:         parseFloat(t.lat || 0),
       lng:         parseFloat(t.lng || 0),
       speed:       String(t.speed || '0.0'),
       course:      t.course      || 0,
       status:      t.status      || 'underway',
-      destination: t.destination || t.to || '—',
-      eta:         t.eta         || '—',
-      imo:         t.imo         || '—',
-      from:        t.from        || '—',
-      to:          t.to          || t.destination || '—',
+      destination: t.destination || t.to || '--',
+      eta:         t.eta         || '--',
+      imo:         t.imo         || '--',
+      from:        t.from        || '--',
+      to:          t.to          || t.destination || '--',
       updatedAt:   t.updatedAt   || '',
       stale:       t.stale       || false,
     }));
@@ -151,19 +151,19 @@
     if (state.mapMode === 'tankers') renderMapMode('tankers');
 
     const badge = liveTankers.length > 0
-      ? `AIS LIVE · ${liveTankers.length} vessels`
+      ? `AIS LIVE . ${liveTankers.length} vessels`
       : 'AIS CACHED';
     setStatusBadge('api-status-tankers', liveTankers.length > 0 ? 'live' : 'demo', badge);
     console.log(`[CrudeRadar] AIS: ${liveTankers.length} live, ${staleTankers.length} cached`);
   }
 
-  // ── TANKER STATS ─────────────────────────────────────────
+  // ?? TANKER STATS ?????????????????????????????????????????
   // Computes all stats dynamically from AIS vessel array.
   // Uses position (lat/lng) and destination keyword matching.
   function updateTankerStats(tankers, liveCount) {
     if (!tankers?.length) return;
 
-    // ── Fleet composition ─────────────────────────────────
+    // ?? Fleet composition ?????????????????????????????????
     const total    = tankers.length;
     const underway = tankers.filter(t => t.status === 'underway').length;
     const anchored = tankers.filter(t => t.status === 'anchored' || t.status === 'moored').length;
@@ -181,12 +181,12 @@
 
     // Fetch timestamp
     if (liveCount > 0) {
-      setText('ais-fetched-at', `Live · ${liveCount} AIS positions`);
+      setText('ais-fetched-at', `Live . ${liveCount} AIS positions`);
     } else {
       setText('ais-fetched-at', 'Cached positions');
     }
 
-    // ── Zone detection (by lat/lng bounding boxes) ────────
+    // ?? Zone detection (by lat/lng bounding boxes) ????????
     function inBox(t, latMin, latMax, lngMin, lngMax) {
       return t.lat >= latMin && t.lat <= latMax && t.lng >= lngMin && t.lng <= lngMax;
     }
@@ -201,7 +201,7 @@
     setText('zone-malacca',  zoneMalacca);
     setText('zone-northsea', zoneNorthSea);
 
-    // ── Route detection (by position + destination) ───────
+    // ?? Route detection (by position + destination) ???????
     // Middle East origin: vessel in Persian Gulf or Red Sea bounding box
     // OR destination keywords suggest Middle East origin
     const ME_ORIGIN_LAT_MIN = 10, ME_ORIGIN_LAT_MAX = 30;
@@ -224,19 +224,19 @@
       return inBox(t, AM_ORIGIN_LAT_MIN, AM_ORIGIN_LAT_MAX, AM_ORIGIN_LNG_MIN, AM_ORIGIN_LNG_MAX);
     }
 
-    // ME → Asia: vessel from ME region heading to Asian port
+    // ME -> Asia: vessel from ME region heading to Asian port
     const meToAsia = tankers.filter(t =>
       t.status === 'underway' && (inME(t) || destMatch(t, ASIA_DEST)) &&
       destMatch(t, ASIA_DEST)
     ).length;
 
-    // ME → Europe: vessel from ME region heading to European port
+    // ME -> Europe: vessel from ME region heading to European port
     const meToEurope = tankers.filter(t =>
       t.status === 'underway' && (inME(t) || destMatch(t, EU_DEST)) &&
       destMatch(t, EU_DEST)
     ).length;
 
-    // Americas → Europe: vessel from Atlantic heading east to Europe
+    // Americas -> Europe: vessel from Atlantic heading east to Europe
     const amToEurope = tankers.filter(t =>
       t.status === 'underway' && inAmericas(t) && destMatch(t, EU_DEST)
     ).length;
@@ -245,12 +245,12 @@
     const underwayVessels = tankers.filter(t => t.status === 'underway' && parseFloat(t.speed) > 0.5);
     const avgSpeed = underwayVessels.length > 0
       ? (underwayVessels.reduce((sum, t) => sum + parseFloat(t.speed), 0) / underwayVessels.length).toFixed(1)
-      : '—';
+      : '--';
 
-    setText('route-me-asia',    meToAsia   || '—');
-    setText('route-me-europe',  meToEurope || '—');
-    setText('route-am-europe',  amToEurope || '—');
-    setText('ais-avg-speed',    avgSpeed + (avgSpeed !== '—' ? ' kn' : ''));
+    setText('route-me-asia',    meToAsia   || '--');
+    setText('route-me-europe',  meToEurope || '--');
+    setText('route-am-europe',  amToEurope || '--');
+    setText('ais-avg-speed',    avgSpeed + (avgSpeed !== '--' ? ' kn' : ''));
 
     // Detail lines
     const vlccUnderway = tankers.filter(t => t.status === 'underway' && (t.type||'').includes('VLCC')).length;
@@ -265,13 +265,13 @@
     if (el) el.textContent = String(val);
   }
 
-  // ── APPLY LIVE PRICES ────────────────────────────────────
+  // ?? APPLY LIVE PRICES ????????????????????????????????????
   // parsedPrices shape: { wti, brent, dubai, natgas, rbob, heatoil }
   // each: { price, change, changePct, history:[{period,value}] }
   function applyLivePrices(parsedPrices) {
     if (!parsedPrices) return;
 
-    // Map contract IDs (state.contracts[].id) → parsedPrices keys
+    // Map contract IDs (state.contracts[].id) -> parsedPrices keys
     const idToKey = {
       // Live from OilPriceAPI
       wti:      'wti',
@@ -310,13 +310,13 @@
       console.log(`[CrudeRadar] Applied live prices to ${updated} tiles`);
     }
 
-    // OilPriceAPI history is intraday ticks — NOT reliable for charts.
+    // OilPriceAPI history is intraday ticks -- NOT reliable for charts.
     // Charts always use EIA monthly data (loaded in applyEIACache).
     // We only use OilPriceAPI for current price tiles, not chart history.
     // Chart rendering happens in applyEIACache after EIA data loads.
   }
 
-  // ── APPLY EIA CACHE ─────────────────────────────────────
+  // ?? APPLY EIA CACHE ?????????????????????????????????????
   function applyEIACache(eiaData) {
     // Inventory widget
     const invEl = document.getElementById('inventory-widget');
@@ -327,10 +327,10 @@
           ${(eiaData.stocksLatest / 1000).toFixed(1)}M
         </div>
         <div style="font-family:var(--font-mono);font-size:10px;color:${chg < 0 ? 'var(--accent-green)' : 'var(--accent-red)'};margin-top:3px">
-          ${chg < 0 ? '▼' : '▲'} ${Math.abs(chg / 1000).toFixed(2)}M bbl week-over-week
+          ${chg < 0 ? '?' : '?'} ${Math.abs(chg / 1000).toFixed(2)}M bbl week-over-week
         </div>
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">
-          EIA · ${eiaData.stocksPeriod || ''}
+          EIA . ${eiaData.stocksPeriod || ''}
         </div>`;
     }
 
@@ -357,7 +357,7 @@
       renderPriceGrid();
     }
 
-    // ── CHART HISTORY (always from EIA monthly — clean 30-point history) ──
+    // ?? CHART HISTORY (always from EIA monthly -- clean 30-point history) ??
     // EIA monthly gives one clean data point per month, perfect for charts.
     // Format YYYY-MM periods as "Jan 2025" labels.
     function eiaToChartData(series, count = 30) {
@@ -381,13 +381,13 @@
     if (wtiChart?.length) {
       CrudeRadar.priceHistory.wti = wtiChart.map(d => d.value);
       CrudeRadar.chartLabels      = wtiChart.map(d => d.label);
-      console.log('[charts] EIA WTI history loaded: ' + wtiChart.length + ' months (' + wtiChart[0]?.label + ' → ' + wtiChart[wtiChart.length-1]?.label + ')');
+      console.log('[charts] EIA WTI history loaded: ' + wtiChart.length + ' months (' + wtiChart[0]?.label + ' -> ' + wtiChart[wtiChart.length-1]?.label + ')');
     }
     if (brentChart?.length) {
       CrudeRadar.priceHistory.brent = brentChart.map(d => d.value);
     }
 
-    // Always re-render charts when EIA data loads — this is the authoritative history source
+    // Always re-render charts when EIA data loads -- this is the authoritative history source
     state.chartsInitialized = false;
     try {
       ['chart-wti','chart-brent','chart-dubai','chart-natgas','chart-rbob','chart-heatoil'].forEach(id => {
@@ -399,15 +399,15 @@
     if (state.page === 'charts') initChartsPage();
   }
 
-  // ── STATUS BADGE ─────────────────────────────────────────
+  // ?? STATUS BADGE ?????????????????????????????????????????
   function setStatusBadge(id, type, label) {
     const el = document.getElementById(id);
     if (!el) return;
     const color = type === 'live' ? 'var(--accent-green)' : 'var(--accent-amber)';
-    el.innerHTML = `<span style="color:${color};font-family:var(--font-mono);font-size:9px;letter-spacing:1px">● ${label}</span>`;
+    el.innerHTML = `<span style="color:${color};font-family:var(--font-mono);font-size:9px;letter-spacing:1px">? ${label}</span>`;
   }
 
-  // ── FX DISPLAY ───────────────────────────────────────────
+  // ?? FX DISPLAY ???????????????????????????????????????????
   function updateFXDisplay() {
     const el = document.getElementById('fx-rates');
     if (!el || !state.fxRates) return;
@@ -426,35 +426,51 @@
     ).join('');
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // TICKER
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function buildTicker() {
-    const msgs    = CrudeRadar.tickerMessages;
+    const msgs = CrudeRadar.tickerMessages || [];
+    if (!msgs.length) return;
     const doubled = [...msgs, ...msgs];
     const track   = document.getElementById('ticker-track');
-    if (track) track.innerHTML = doubled.map(m =>
-      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">•</span> ${m.text}</span>`
+    if (!track) return;
+    track.innerHTML = doubled.map(m =>
+      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">*</span> ${m.text}</span>`
     ).join('');
   }
 
   function updateTickerFromNews(articles) {
-    const critical = articles.filter(a => a.critical).slice(0, 6);
-    if (!critical.length) return;
-    const combined = [
-      ...critical.map(a => ({ text: a.headline.slice(0, 90), critical: true })),
-      ...CrudeRadar.tickerMessages.filter(m => !m.critical),
+    // Use critical items first, then recent headlines to fill the ticker
+    const cutoff  = Date.now() - 21 * 24 * 60 * 60 * 1000;
+    const recent  = articles.filter(a => {
+      if (!a.pubDate && !a.time) return true;
+      const d = new Date(a.pubDate || 0);
+      return isNaN(d) || d.getTime() >= cutoff;
+    });
+    const critical = recent.filter(a => a.critical).slice(0, 5);
+    const regular  = recent.filter(a => !a.critical).slice(0, 20);
+    const tickerItems = [
+      ...critical.map(a => ({ text: a.headline.slice(0, 100), critical: true })),
+      ...regular.map(a => ({ text: '[' + (a.source || 'NEWS').split(' ')[0] + '] ' + a.headline.slice(0, 90), critical: false })),
     ];
-    const doubled = [...combined, ...combined];
+    if (!tickerItems.length) return;
+    // Duplicate for seamless loop
+    const doubled = [...tickerItems, ...tickerItems];
     const track   = document.getElementById('ticker-track');
-    if (track) track.innerHTML = doubled.map(m =>
-      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">•</span> ${m.text}</span>`
+    if (!track) return;
+    track.innerHTML = doubled.map(m =>
+      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">*</span> ${m.text}</span>`
     ).join('');
+    // Fix animation speed based on content length
+    const totalChars = tickerItems.reduce((s, m) => s + m.text.length, 0);
+    const duration = Math.max(40, Math.min(120, totalChars * 0.18));
+    track.style.animationDuration = duration + 's';
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // CLOCK
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function startClock() {
     const el = document.getElementById('live-clock');
     if (!el) return;
@@ -463,9 +479,9 @@
     setInterval(update, 1000);
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // PRICE GRID
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function renderPriceGrid() {
     const grid = document.getElementById('price-grid');
     if (!grid) return;
@@ -478,20 +494,20 @@
         ? Math.abs(c._liveChangePct).toFixed(2)
         : Math.abs((chg / (c.prev || c.price || 1)) * 100).toFixed(2);
       const dir   = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
-      const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '—';
-      const priceStr = c.price > 0 ? '$' + c.price.toFixed(2) : '—';
+      const arrow = chg > 0 ? '?' : chg < 0 ? '?' : '--';
+      const priceStr = c.price > 0 ? '$' + c.price.toFixed(2) : '--';
       const chgStr   = c.price > 0 ? `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)` : 'Loading...';
       return `<div class="price-card ${dir}" id="pc-${c.id}">
         <div class="label">${c.flag} ${c.label}</div>
         <div class="name">${c.name}</div>
         <div class="price">${priceStr}</div>
         <div class="change">${chgStr}</div>
-        <div class="exchange">${c.exchange} · ${c.unit}</div>
+        <div class="exchange">${c.exchange} . ${c.unit}</div>
       </div>`;
     }).join('');
   }
 
-  // ── SIMULATED UPDATES (demo only — stops when live data loads)
+  // ?? SIMULATED UPDATES (demo only -- stops when live data loads)
   function startSimulatedPriceUpdates() {
     setInterval(() => {
       if (state.liveDataActive) return; // do NOT overwrite real prices
@@ -504,7 +520,7 @@
         const chg = c.price - c.prev;
         const pct = ((chg / (c.prev || 1)) * 100).toFixed(2);
         const dir   = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
-        const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '—';
+        const arrow = chg > 0 ? '?' : chg < 0 ? '?' : '--';
         card.className = 'price-card ' + dir;
         card.querySelector('.price').textContent = '$' + c.price.toFixed(2);
         card.querySelector('.change').textContent = `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)`;
@@ -516,16 +532,23 @@
     }, 3000);
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // NEWS
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function renderNewsPanel(newsItems) {
     const el = document.getElementById('news-feed');
     if (!el) return;
+    // Filter to 21 days
+    const _cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
+    newsItems = (newsItems || []).filter(n => {
+      if (!n.pubDate) return true;
+      const d = new Date(n.pubDate);
+      return isNaN(d) || d.getTime() >= _cutoff;
+    });
     if (!newsItems || newsItems.length === 0) {
       el.innerHTML = `<div style="padding:14px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-align:center">
-        <div style="margin-bottom:4px">⏳ Loading live news...</div>
-        <div style="font-size:9px;color:var(--text-dim)">Fetched hourly from OPEC · IEA · OilPrice · Rigzone · Platts</div>
+        <div style="margin-bottom:4px">? Loading live news...</div>
+        <div style="font-size:9px;color:var(--text-dim)">Fetched hourly from OPEC . IEA . OilPrice . Rigzone . Platts</div>
       </div>`;
       return;
     }
@@ -538,29 +561,204 @@
     ).join('');
   }
 
-  function updateNewsPage(articles) {
-    const el = document.getElementById('news-full-list');
-    if (!el) return;
-    el.innerHTML = articles.map(n => `
-      <div style="padding:14px 0;border-bottom:1px solid rgba(30,45,69,0.4);cursor:pointer"
-           onclick="window.open('${n.url || '#'}','_blank')">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-          <span class="news-source" style="margin:0">${n.source}</span>
-          <span class="news-tag${n.critical ? ' critical' : ''}">${n.tag}</span>
-          ${n.critical ? '<span class="news-tag critical">BREAKING</span>' : ''}
-          <span class="news-time" style="margin:0;margin-left:auto">${n.time}</span>
-        </div>
-        <div style="font-family:var(--font-ui);font-size:14px;font-weight:500;color:var(--text-primary);line-height:1.5">
-          ${escapeHtml(n.headline)}
-        </div>
-        ${n.url ? `<div style="font-family:var(--font-mono);font-size:10px;color:var(--accent-blue);margin-top:4px">Read full article ↗</div>` : ''}
-      </div>`
-    ).join('');
+  // ?? Region classifier ??????????????????????????????????????
+  function classifyRegion(article) {
+    const text = ((article.headline || '') + ' ' + (article.source || '') + ' ' + (article.description || '')).toLowerCase();
+
+    const MENA = [
+      'saudi','riyadh','aramco','opec','iran','iraq','basrah','kirkuk','uae','dubai',
+      'kuwait','oman','qatar','libya','algeria','egypt','hormuz','mideast','middle east',
+      'gulf','bahrain','yemen','jordan','mees','arab','persian','israel','cairo',
+      'tehran','baghdad','abu dhabi','muscat','doha'
+    ];
+    const EU = [
+      'equinor','norway','north sea','norsk','brent','uk ','united kingdom','britain',
+      'scotland','shell','bp ','total','druzhba','russia','gazprom','europe','european',
+      'germany','france','italy','spain','poland','netherlands','denmark','finland',
+      'sweden','vienna','opec+','iea','london','paris','berlin','amsterdam','rotterdam',
+      'baltic','ukraine','nato','brussels','eu '
+    ];
+    const NA = [
+      'permian','shale','bakken','eagle ford','haynesville','marcellus','wti',
+      'cushing','nymex','eia ','texas','oklahoma','north dakota','colorado','canada',
+      'alberta','keystone','pipeline us','gulf of mexico','gulf coast','mexico ',
+      'pemex','chevron','exxon','conoco','pioneer','halliburton','schlumberger',
+      'coterra','devon','us crude','u.s.','american','washington','houston','calgary'
+    ];
+    const AP = [
+      'china','beijing','india','mumbai','japan','tokyo','korea','singapore',
+      'indonesia','malaysia','vietnam','thailand','australia','india','lng asia',
+      'cnooc','sinopec','petrochina','bhp','woodside','jera','kogas','ongc',
+      'reliance','dubai crude','asia','pacific','taiwan','myanmar','bangladesh'
+    ];
+
+    if (MENA.some(k => text.includes(k))) return 'MENA';
+    if (AP.some(k => text.includes(k)))   return 'AP';
+    if (EU.some(k => text.includes(k)))   return 'EU';
+    if (NA.some(k => text.includes(k)))   return 'NA';
+
+    // fallback by tag
+    if (article.tag === 'MIDEAST') return 'MENA';
+    if (article.tag === 'AFRICA')  return 'MENA';
+    return 'NA'; // default to NA (most articles are US-centric)
   }
 
-  // ════════════════════════════════════════════════════════════
+  function tagClass(tag) {
+    const t = (tag || '').toUpperCase();
+    if (t === 'MARKET') return 'nws-tag-market';
+    if (t === 'SUPPLY') return 'nws-tag-supply';
+    if (t === 'PRICE')  return 'nws-tag-price';
+    if (t === 'GAS' || t === 'LNG') return 'nws-tag-gas';
+    if (t === 'MIDEAST' || t === 'OPEC') return 'nws-tag-mideast';
+    if (t === 'REPORT') return 'nws-tag-report';
+    return 'nws-tag-news';
+  }
+
+  function renderNewsCard(n) {
+    const url = escapeHtml(n.url || '');
+    const onClick = url ? `onclick="window.open('${url}','_blank')"` : '';
+    const breakingPill = n.critical ? '<span class="nws-breaking-pill">BREAKING</span>' : '';
+    return `<div class="nws-card" ${onClick}>
+      <div class="nws-card-meta">
+        <span class="nws-card-src">${escapeHtml(n.source || '')}</span>
+        <span class="nws-tag ${tagClass(n.tag)}">${n.tag || 'NEWS'}</span>
+        ${breakingPill}
+        <span class="nws-card-time">${n.time || ''}</span>
+      </div>
+      <div class="nws-card-hl">${escapeHtml(n.headline || '')}</div>
+      ${url ? '<div class="nws-card-link">Read article &#8599;</div>' : ''}
+    </div>`;
+  }
+
+  let _nwsDonutChart = null;
+
+  function updateNewsPage(articles) {
+    // 21-day filter
+    const _c21 = Date.now() - 21 * 24 * 60 * 60 * 1000;
+    articles = (articles || []).filter(n => {
+      if (!n.pubDate) return true;
+      const d = new Date(n.pubDate);
+      return isNaN(d) || d.getTime() >= _c21;
+    });
+
+    // Apply active region + topic filters
+    const regionFilter = document.querySelector('#nws-region-btns .nws-fbtn.active')?.dataset.region || 'ALL';
+    const topicFilter  = document.querySelector('#nws-topic-btns  .nws-fbtn.active')?.dataset.topic  || 'ALL';
+    const searchQ      = (document.getElementById('nws-search')?.value || '').toLowerCase().trim();
+    const sortMode     = document.querySelector('#nws-sort-btns .nws-fbtn.active')?.dataset.sort || 'newest';
+
+    // Classify region for each article
+    const classified = articles.map(n => ({ ...n, region: classifyRegion(n) }));
+
+    // Filter
+    let filtered = classified.filter(n => {
+      if (regionFilter !== 'ALL' && n.region !== regionFilter) return false;
+      if (topicFilter  !== 'ALL' && n.tag !== topicFilter)     return false;
+      if (searchQ && !n.headline?.toLowerCase().includes(searchQ) &&
+                     !n.source?.toLowerCase().includes(searchQ)) return false;
+      return true;
+    });
+
+    // Sort
+    if (sortMode === 'newest') {
+      filtered.sort((a, b) => {
+        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+        const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+        return db - da;
+      });
+    }
+
+    // Counts per region (from ALL articles, not filtered, for the chart)
+    const allClassified = classified;
+    const counts = { MENA: 0, NA: 0, EU: 0, AP: 0 };
+    allClassified.forEach(n => { if (counts[n.region] !== undefined) counts[n.region]++; });
+    const total = allClassified.length;
+
+    // Update donut chart
+    const donutCanvas = document.getElementById('news-donut-chart');
+    if (donutCanvas) {
+      const chartData = [counts.MENA, counts.NA, counts.EU, counts.AP];
+      if (_nwsDonutChart) {
+        _nwsDonutChart.data.datasets[0].data = chartData;
+        _nwsDonutChart.update('none');
+      } else {
+        _nwsDonutChart = new Chart(donutCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: ['Middle East & N.Africa', 'North America', 'Europe', 'Asia Pacific'],
+            datasets: [{
+              data: chartData,
+              backgroundColor: ['#c07020', '#2a7ab0', '#3a8010', '#502880'],
+              borderColor: '#0d1117',
+              borderWidth: 3,
+              hoverOffset: 4,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '68%',
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#0e1117', borderColor: '#1e2d45', borderWidth: 1,
+                titleColor: '#e8b84b', bodyColor: '#e0e8f0',
+                titleFont: { family: "'Share Tech Mono', monospace", size: 11 },
+                bodyFont:  { family: "'Share Tech Mono', monospace", size: 11 },
+                callbacks: { label: ctx => '  ' + ctx.label + ': ' + ctx.parsed + ' (' + (total ? Math.round(ctx.parsed/total*100) : 0) + '%)' },
+              },
+            },
+          },
+        });
+      }
+    }
+
+    // Update KPIs
+    const pct = v => total ? Math.round(v / total * 100) + '%' : '0%';
+    const setEl = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setEl('nws-total-num',   total);
+    setEl('nws-kpi-total',   total);
+    setEl('nws-kpi-breaking', allClassified.filter(n => n.critical).length);
+    setEl('nws-pct-mena', pct(counts.MENA));
+    setEl('nws-pct-na',   pct(counts.NA));
+    setEl('nws-pct-eu',   pct(counts.EU));
+    setEl('nws-pct-ap',   pct(counts.AP));
+    setEl('news-count-label', filtered.length + ' articles shown');
+
+    // Colour legend percentages
+    const legColors = { 'nws-pct-mena': '#e8b84b', 'nws-pct-na': '#4a9ab0', 'nws-pct-eu': '#5a9040', 'nws-pct-ap': '#8060b0' };
+    Object.entries(legColors).forEach(([id, col]) => {
+      const e = document.getElementById(id); if (e) e.style.color = col;
+    });
+
+    // Render 4 region columns
+    const REGIONS = [
+      { key: 'MENA', listId: 'nws-items-mena', countId: 'nws-count-mena' },
+      { key: 'EU',   listId: 'nws-items-eu',   countId: 'nws-count-eu'   },
+      { key: 'NA',   listId: 'nws-items-na',   countId: 'nws-count-na'   },
+      { key: 'AP',   listId: 'nws-items-ap',   countId: 'nws-count-ap'   },
+    ];
+
+    REGIONS.forEach(({ key, listId, countId }) => {
+      const regionArticles = (regionFilter === 'ALL' || regionFilter === key)
+        ? filtered.filter(n => n.region === key)
+        : [];
+      const el = document.getElementById(listId);
+      const cEl = document.getElementById(countId);
+      if (cEl) cEl.textContent = counts[key] + ' articles';
+      if (!el) return;
+      if (!regionArticles.length) {
+        const msg = regionFilter !== 'ALL' && regionFilter !== key
+          ? '<div class="nws-empty">Filtered out</div>'
+          : '<div class="nws-empty">No articles yet</div>';
+        el.innerHTML = msg;
+        return;
+      }
+      el.innerHTML = regionArticles.map(renderNewsCard).join('');
+    });
+  }
+
+  // ============================================================
   // TANKERS TABLE
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function renderTankersTable(tankers) {
     const tbody = document.getElementById('tankers-tbody');
     if (!tbody) return;
@@ -577,10 +775,10 @@
       // Stale = position from previous fetch cycle
       const staleMarker = t.stale
         ? '<span style="color:var(--text-dim);font-size:9px;margin-left:4px">CACHED</span>'
-        : '<span style="color:var(--accent-green);font-size:9px;margin-left:4px">●</span>';
+        : '<span style="color:var(--accent-green);font-size:9px;margin-left:4px">?</span>';
       // Course arrow based on heading
       const courseArrow = t.course
-        ? `<span style="display:inline-block;transform:rotate(${t.course}deg);font-size:12px">↑</span>`
+        ? `<span style="display:inline-block;transform:rotate(${t.course}deg);font-size:12px">?</span>`
         : '';
 
       return `<tr style="${t.stale ? 'opacity:0.6' : ''}">
@@ -588,13 +786,13 @@
           <span class="tanker-status-dot ${status}"></span>
           <span style="font-weight:500">${escapeHtml(t.name)}</span>
           ${staleMarker}
-          ${t.imo && t.imo !== '—' ? `<div style="font-size:9px;color:var(--text-dim);margin-top:1px">IMO ${t.imo}</div>` : ''}
+          ${t.imo && t.imo !== '--' ? `<div style="font-size:9px;color:var(--text-dim);margin-top:1px">IMO ${t.imo}</div>` : ''}
         </td>
         <td>${t.flag} ${t.type}</td>
         <td style="color:var(--text-dim)">${escapeHtml(t.from)}</td>
         <td style="color:var(--text-bright)">${escapeHtml(t.destination || t.to)}</td>
         <td style="font-family:var(--font-mono);font-size:11px">
-          ${lat.toFixed(3)}°, ${lng.toFixed(3)}°
+          ${lat.toFixed(3)} deg, ${lng.toFixed(3)} deg
         </td>
         <td style="font-family:var(--font-mono)">
           ${courseArrow} ${speed.toFixed(1)} kn
@@ -605,9 +803,9 @@
     }).join('');
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // PRODUCTION TABLE
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function renderProductionTable() {
     const tbody = document.getElementById('prod-tbody');
     if (!tbody) return;
@@ -626,9 +824,9 @@
     }).join('');
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // LEAFLET MAP
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   const COUNTRY_LATLNG = {
     US:[38.9,-97.5], RU:[62,95],    SA:[24,45],    CA:[57,-97],   IQ:[33,44],
     CN:[35.5,103],   AE:[23.4,53.8],IR:[32.4,53.7],BR:[-10,-55], KW:[29.3,47.5],
@@ -640,7 +838,7 @@
     if (!container || typeof L === 'undefined') return;
     state.map = L.map('leaflet-map', { center:[20,10], zoom:2, minZoom:1, maxZoom:8 });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#ff6b00">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions" style="color:#ff6b00">CARTO</a>',
+      attribution: '? <a href="https://openstreetmap.org/copyright" style="color:#ff6b00">OpenStreetMap</a> contributors, ? <a href="https://carto.com/attributions" style="color:#ff6b00">CARTO</a>',
       subdomains: 'abcd', maxZoom: 19,
     }).addTo(state.map);
     setTimeout(() => {
@@ -733,7 +931,7 @@
       const marker = L.marker([t.lat, t.lng], { icon });
       marker.bindPopup(makePopup(col, t.name, [
         `Type: <span style="color:#e0e8f0">${t.flag} ${t.type}</span>`,
-        `Route: <span style="color:#e0e8f0">${t.from} → ${t.to}</span>`,
+        `Route: <span style="color:#e0e8f0">${t.from} -> ${t.to}</span>`,
         `Speed: <span style="color:#e0e8f0">${t.speed} knots</span>`,
         `Status: <span style="color:${col}">${t.status.toUpperCase()}</span>`,
         `ETA: <span style="color:#e0e8f0">${t.eta}</span>`,
@@ -760,8 +958,8 @@
       if (title) title.textContent = 'PRODUCTION (Mb/d)';
       items.innerHTML = `
         <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff6b00"></div>>10 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>5–10 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>1–5 Mb/d</div>`;
+        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>5-10 Mb/d</div>
+        <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>1-5 Mb/d</div>`;
     } else if (mode === 'tankers') {
       if (title) title.textContent = 'TANKER STATUS';
       items.innerHTML = `
@@ -772,14 +970,14 @@
       if (title) title.textContent = 'CONSUMPTION (Mb/d)';
       items.innerHTML = `
         <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff1744"></div>>15 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff6b00"></div>5–15 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>1–5 Mb/d</div>`;
+        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff6b00"></div>5-15 Mb/d</div>
+        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>1-5 Mb/d</div>`;
     }
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // NAVIGATION
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function setupNavigation() {
     document.querySelectorAll('[data-page]').forEach(link => {
       link.addEventListener('click', e => { e.preventDefault(); navigateTo(link.dataset.page); });
@@ -794,6 +992,7 @@
     if (page === 'charts') { initChartsPage(); initEIACharts(); }
     if (page === 'stats')  initStatsPage();
     if (page === 'country') initCountryPage();
+    if (page === 'news')    initNewsFilters();
     if (page === 'dashboard' && state.map) setTimeout(() => state.map.invalidateSize(), 100);
   }
 
@@ -807,9 +1006,40 @@
     });
   }
 
-  // ════════════════════════════════════════════════════════════
+  function initNewsFilters() {
+    const allNews = () => [...state.telegramNews, ...state.liveNews];
+
+    const wireGroup = (groupId) => {
+      const btns = document.querySelectorAll('#' + groupId + ' .nws-fbtn');
+      if (!btns.length || btns[0]._nwsWired) return;
+      btns.forEach(btn => {
+        btn._nwsWired = true;
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          updateNewsPage(allNews());
+        });
+      });
+    };
+
+    wireGroup('nws-region-btns');
+    wireGroup('nws-topic-btns');
+    wireGroup('nws-sort-btns');
+
+    const search = document.getElementById('nws-search');
+    if (search && !search._nwsWired) {
+      search._nwsWired = true;
+      let debounce;
+      search.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => updateNewsPage(allNews()), 250);
+      });
+    }
+  }
+
+  // ============================================================
   // AUTH
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function setupAuth() {
     document.getElementById('login-btn')?.addEventListener('click',  () => openModal('login'));
     document.getElementById('signup-btn')?.addEventListener('click', () => openModal('signup'));
@@ -855,20 +1085,20 @@
     document.getElementById('chat-input-area').style.display   = 'flex';
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // CHAT
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function setupChat() {
     const toggle = document.getElementById('chat-toggle');
     const panel  = document.getElementById('chat-panel');
     toggle?.addEventListener('click', () => {
       state.chatOpen = !state.chatOpen;
       panel?.classList.toggle('open', state.chatOpen);
-      toggle.textContent = state.chatOpen ? '✕' : '💬';
+      toggle.textContent = state.chatOpen ? '?' : '?';
       if (state.chatOpen) renderChatMessages();
     });
     document.getElementById('chat-close')?.addEventListener('click', () => {
-      state.chatOpen = false; panel?.classList.remove('open'); toggle.textContent = '💬';
+      state.chatOpen = false; panel?.classList.remove('open'); toggle.textContent = '?';
     });
     document.getElementById('chat-send')?.addEventListener('click', sendChat);
     document.getElementById('chat-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
@@ -909,11 +1139,11 @@
     container.scrollTop = container.scrollHeight;
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // CHARTS PAGE
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
 
-  // Called by applyLivePrices whenever prices update — keeps headers live
+  // Called by applyLivePrices whenever prices update -- keeps headers live
   function updateChartHeaders(parsedPrices) {
     const map = [
       { priceKey:'wti',     id:'wti'     },
@@ -931,7 +1161,7 @@
       priceEl.textContent = '$' + data.price.toFixed(2);
       if (data.changePct !== null && data.changePct !== undefined) {
         const up   = data.changePct >= 0;
-        const sign = up ? '▲ +' : '▼ ';
+        const sign = up ? '? +' : '? ';
         chgEl.textContent  = `${sign}${data.changePct.toFixed(2)}%`;
         chgEl.style.color  = up ? 'var(--accent-green)' : 'var(--accent-red)';
       }
@@ -946,7 +1176,7 @@
 
     const hasData = Object.values(CrudeRadar.priceHistory).some(h => h?.length > 0);
     if (!hasData) {
-      console.info('[charts] No history data yet — waiting for live data');
+      console.info('[charts] No history data yet -- waiting for live data');
       state.chartsInitialized = false; // allow retry
       return;
     }
@@ -997,9 +1227,9 @@
     console.log('[charts] Rendered', cfgs.filter(c => CrudeRadar.priceHistory[c.id.replace('chart-','')]?.length).length, 'charts');
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // STATS PAGE
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function initStatsPage() {
     if (state.statsInitialized) return;
     state.statsInitialized = true;
@@ -1021,9 +1251,9 @@
     });
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // TELEGRAM FEED
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function initTelegramFeed() {
     fetchTelegramFeed();
     setInterval(fetchTelegramFeed, 60 * 1000);
@@ -1032,7 +1262,7 @@
   async function fetchTelegramFeed() {
     const messages = await CrudeAPI.fetchTelegramMessages(20);
     if (!messages?.length) {
-      setStatusBadge('api-status-telegram', 'demo', 'TELEGRAM ⚙ SETUP');
+      setStatusBadge('api-status-telegram', 'demo', 'TELEGRAM ? SETUP');
       return;
     }
     renderTelegramFeed(messages);
@@ -1055,24 +1285,24 @@
         <div class="tg-item-header">
           <span class="tg-channel">${m.chatName || m.source || 'Telegram'}</span>
           <span class="tg-tag${m.critical ? ' critical' : ''}">${m.tag}</span>
-          ${m.critical ? '<span class="tg-tag critical">⚡ BREAKING</span>' : ''}
+          ${m.critical ? '<span class="tg-tag critical">? BREAKING</span>' : ''}
           <span class="tg-time">${m.time}</span>
         </div>
         <div class="tg-text">${escapeHtml(m.headline)}</div>
-        ${m.url ? `<div style="font-family:var(--font-mono);font-size:9px;color:#00b0ff;margin-top:3px">View on Telegram ↗</div>` : ''}
+        ${m.url ? `<div style="font-family:var(--font-mono);font-size:9px;color:#00b0ff;margin-top:3px">View on Telegram ?</div>` : ''}
       </div>`).join('');
     // Merge Telegram into news feed sidebar
     state.telegramNews = messages.map(m => ({
-      source: `📡 ${m.chatName || 'Telegram'}`, tag: m.tag,
+      source: `? ${m.chatName || 'Telegram'}`, tag: m.tag,
       headline: m.headline, url: m.url, time: m.time, critical: m.critical,
     }));
     const combined = [...state.telegramNews, ...state.liveNews].slice(0, 12);
     renderNewsPanel(combined);
   }
 
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   // UTILS
-  // ════════════════════════════════════════════════════════════
+  // ============================================================
   function escapeHtml(text) {
     if (!text) return '';
     return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
