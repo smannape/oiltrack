@@ -19,6 +19,7 @@
     chartsInitialized: false,
     statsInitialized:  false,
     countryInitialized: false,
+    chartsInitialized: false,
     liveNews:          [],
     telegramNews:      [],
     fxRates:           null,
@@ -791,10 +792,20 @@
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page)?.classList.add('active');
     document.querySelectorAll('[data-page]').forEach(l => l.classList.toggle('active', l.dataset.page === page));
-    if (page === 'charts') initChartsPage();
+    if (page === 'charts') { initChartsPage(); initEIACharts(); }
     if (page === 'stats')  initStatsPage();
     if (page === 'country') initCountryPage();
     if (page === 'dashboard' && state.map) setTimeout(() => state.map.invalidateSize(), 100);
+  }
+
+  function initEIACharts() {
+    if (state.chartsInitialized) return;
+    state.chartsInitialized = true;
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        if (typeof window.initEIAChartsPage === 'function') window.initEIAChartsPage();
+      });
+    });
   }
 
   // ════════════════════════════════════════════════════════════
