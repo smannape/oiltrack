@@ -369,24 +369,12 @@
       </div>
 
       <div class="sidebar-section">
-        <div class="sidebar-title">Upcoming Events</div>
-        <div style="font-family:var(--font-mono);font-size:11px">
-          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
-            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 11 · EIA</div>
-            <div style="color:var(--text-primary);margin-top:2px">Weekly Crude Stocks Report</div>
-          </div>
-          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
-            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 12 · IEA</div>
-            <div style="color:var(--text-primary);margin-top:2px">Monthly Oil Market Report</div>
-          </div>
-          <div style="padding:6px 0;border-bottom:1px solid rgba(30,45,69,0.4)">
-            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">SEP 15 · OPEC</div>
-            <div style="color:var(--text-primary);margin-top:2px">Ministerial Meeting Vienna</div>
-          </div>
-          <div style="padding:6px 0">
-            <div style="color:var(--accent-orange);font-size:9px;letter-spacing:1px">OCT 01 · NYMEX</div>
-            <div style="color:var(--text-primary);margin-top:2px">WTI Nov Contract Expiry</div>
-          </div>
+        <div class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Upcoming Events</span>
+          <span id="events-badge" style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim)">LIVE</span>
+        </div>
+        <div id="events-list" style="font-family:var(--font-mono);font-size:11px">
+          <div style="padding:6px 0;color:var(--text-dim);font-size:10px">Loading events...</div>
         </div>
       </div>
     </aside>
