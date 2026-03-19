@@ -31,6 +31,11 @@ export default async function handler(req) {
   ]);
 
   const [oil, ais, eia] = results;
+
+  // Trigger EIA extra (non-critical, fire-and-forget)
+  fetch(`${siteUrl}/.netlify/functions/fetch-eia-extra`, {
+    method: 'POST', headers: { 'x-trigger': 'scheduled' },
+  }).catch(e => console.warn('[scheduled] eia-extra:', e.message));
   console.log(`[scheduled-refresh] oil=${oil.status} ais=${ais.status} eia=${eia.status}`);
 
   return new Response(JSON.stringify({
