@@ -89,6 +89,17 @@
   force  = true
 
 [[redirects]]
+  from   = "/api/eia-extra"
+  to     = "/.netlify/functions/get-eia-extra"
+  status = 200
+
+[[redirects]]
+  from   = "/api/eia-extra-refresh"
+  to     = "/.netlify/functions/get-eia-extra"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
