@@ -79,6 +79,7 @@
     <a href="#" data-page="dashboard" class="active">Dashboard</a>
     <a href="#" data-page="tankers">Tankers</a>
     <a href="#" data-page="charts">EIA Charts</a>
+    <a href="#" data-page="charts-extra">EIA Dashboard</a>
     <a href="#" data-page="stats">Statistics</a>
     <a href="#" data-page="country">Country Drilldown</a>
     <a href="#" data-page="news">News</a>
@@ -631,6 +632,147 @@
 </div>
 
 
+<!-- ===== PAGE: EIA EXTRA DASHBOARD ===== -->
+<div id="page-charts-extra" class="page">
+
+  <!-- Status bar -->
+  <div style="background:var(--bg-panel);border-bottom:1px solid var(--border);padding:5px 14px;display:flex;align-items:center;gap:16px;font-family:var(--font-mono);font-size:9px">
+    <span style="color:var(--text-dim)">EIA API v2</span>
+    <span style="color:var(--text-dim)">STEO Price Forecast &bull; Production &bull; Refinery &bull; Trade &bull; Electricity</span>
+    <span id="eia-extra-updated" style="color:var(--text-dim);margin-left:auto">--</span>
+    <span id="eia-extra-badge" style="font-family:var(--font-mono);font-size:8px;padding:1px 5px;border:1px solid #ffb300;color:#ffb300;border-radius:2px;letter-spacing:1px">LOADING</span>
+    <button onclick="fetch('/api/eia-extra-refresh',{method:'POST'}).then(function(){setTimeout(function(){window.initEIAExtraPage&&window.initEIAExtraPage();},3000);})" style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;border-radius:2px">REFRESH</button>
+  </div>
+
+  <!-- Top KPI strip -->
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:10px 14px 0">
+    <div class="eia-kpi-card" id="eia-extra-kpi-prod"><div class="eia-kv">--</div><div class="eia-ks">US crude production</div></div>
+    <div class="eia-kpi-card" id="eia-extra-kpi-ref"><div class="eia-kv">--</div><div class="eia-ks">Refinery util.</div></div>
+    <div class="eia-kpi-card" id="eia-extra-kpi-wti"><div class="eia-kv">--</div><div class="eia-ks">WTI (STEO)</div></div>
+    <div class="eia-kpi-card" id="eia-extra-kpi-brt"><div class="eia-kv">--</div><div class="eia-ks">Brent (STEO)</div></div>
+    <div class="eia-kpi-card" id="eia-extra-kpi-bal"><div class="eia-kv">--</div><div class="eia-ks">Trade balance</div></div>
+    <div class="eia-kpi-card" id="eia-extra-kpi-gas"><div class="eia-kv">--</div><div class="eia-ks">Gas in grid</div></div>
+  </div>
+
+  <!-- Chart row 1: Production + Refinery -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 0">
+
+    <!-- Chart 1: US Crude Production + STEO Forecast -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">US Crude Production &mdash; STEO Forecast</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA STEO &bull; COPRPUS &bull; monthly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-extra-kpi1a"><div class="eia-kv">--</div><div class="eia-ks">Mbbl/d latest</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi1b"><div class="eia-kv">--</div><div class="eia-ks">Mbbl/d MoM</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi1c"><div class="eia-kv">--</div><div class="eia-ks">STEO end-fcst</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:0 0 6px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)">
+        <span><span style="display:inline-block;width:10px;height:3px;background:#4a9ab0;margin-right:4px;vertical-align:middle"></span>Actual</span>
+        <span><span style="display:inline-block;width:10px;height:2px;border-top:2px dashed #e8b84b;margin-right:4px;vertical-align:middle"></span>STEO forecast</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px">US CRUDE OIL PRODUCTION (MBBL/D) &bull; HISTORY + 18-MO FORECAST</div>
+      <div style="position:relative;height:200px"><canvas id="eia-extra-c1"></canvas></div>
+    </div>
+
+    <!-- Chart 2: Refinery Utilization -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Refinery Utilization</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA &bull; petroleum/pnp/wiup &bull; WPULEUS3 &bull; weekly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-extra-kpi2a"><div class="eia-kv">--</div><div class="eia-ks">Latest util.</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi2b"><div class="eia-kv">--</div><div class="eia-ks">WoW change</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi2c"><div class="eia-kv">--</div><div class="eia-ks">kbd net input</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:0 0 6px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)">
+        <span><span style="display:inline-block;width:10px;height:3px;background:#4a9030;margin-right:4px;vertical-align:middle"></span>Utilization %</span>
+        <span><span style="display:inline-block;width:10px;height:2px;border-top:2px dashed #4a6078;margin-right:4px;vertical-align:middle"></span>5yr avg</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px">WEEKLY REFINERY UTILIZATION (%) &bull; 1 YEAR VS 5YR AVERAGE</div>
+      <div style="position:relative;height:200px"><canvas id="eia-extra-c2"></canvas></div>
+    </div>
+
+  </div>
+
+  <!-- Chart row 2: Price Forecast + Trade Balance -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 0">
+
+    <!-- Chart 3: WTI & Brent Price Forecast -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">WTI &amp; Brent Price &mdash; STEO Forecast</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA STEO &bull; WTIPUUS / BREPUUS &bull; monthly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-extra-kpi3a"><div class="eia-kv">--</div><div class="eia-ks">WTI latest</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi3b"><div class="eia-kv">--</div><div class="eia-ks">Brent latest</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi3c"><div class="eia-kv">--</div><div class="eia-ks">Brent-WTI spread</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi3d"><div class="eia-kv">--</div><div class="eia-ks">WTI STEO avg fcst</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:0 0 6px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)">
+        <span><span style="display:inline-block;width:10px;height:3px;background:#e8b84b;margin-right:4px;vertical-align:middle"></span>WTI actual</span>
+        <span><span style="display:inline-block;width:10px;height:3px;background:#2a7ab0;margin-right:4px;vertical-align:middle"></span>Brent actual</span>
+        <span><span style="display:inline-block;width:10px;height:2px;border-top:2px dashed #7a6010;margin-right:4px;vertical-align:middle"></span>WTI fcst</span>
+        <span><span style="display:inline-block;width:10px;height:2px;border-top:2px dashed #1a4070;margin-right:4px;vertical-align:middle"></span>Brent fcst</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px">WTI &amp; BRENT SPOT + STEO 18-MONTH FORECAST ($/BBL)</div>
+      <div style="position:relative;height:200px"><canvas id="eia-extra-c3"></canvas></div>
+    </div>
+
+    <!-- Chart 4: US Crude Trade Balance -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">US Crude Trade Balance</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA &bull; petroleum/move/wkly &bull; WCREXUS2 / WCRIMUS2</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-extra-kpi4a"><div class="eia-kv">--</div><div class="eia-ks">kbd exports latest</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi4b"><div class="eia-kv">--</div><div class="eia-ks">kbd imports latest</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi4c"><div class="eia-kv">--</div><div class="eia-ks">kbd net balance</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:0 0 6px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim)">
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(42,122,176,0.65);margin-right:4px;vertical-align:middle"></span>Exports</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(224,90,90,0.65);margin-right:4px;vertical-align:middle"></span>Imports (inverted)</span>
+        <span><span style="display:inline-block;width:10px;height:3px;background:#00e676;margin-right:4px;vertical-align:middle"></span>Net balance</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px">WEEKLY US CRUDE EXPORTS / IMPORTS / NET BALANCE (KBD)</div>
+      <div style="position:relative;height:200px"><canvas id="eia-extra-c4"></canvas></div>
+    </div>
+
+  </div>
+
+  <!-- Chart row 3: Electricity Mix (full width) -->
+  <div style="padding:10px 14px 14px">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">US Electricity Generation Mix</span>
+        <span class="panel-meta" style="color:#00b0ff">EIA &bull; electricity/electric-power-operational-data &bull; sector 99 &bull; monthly</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 0 12px">
+        <div class="eia-kpi-card" id="eia-extra-kpi5a"><div class="eia-kv">--</div><div class="eia-ks">Natural gas share</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi5b"><div class="eia-kv">--</div><div class="eia-ks">All renewables</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi5c"><div class="eia-kv">--</div><div class="eia-ks">Nuclear share</div></div>
+        <div class="eia-kpi-card" id="eia-extra-kpi5d"><div class="eia-kv">--</div><div class="eia-ks">Coal share</div></div>
+      </div>
+      <div style="display:flex;gap:14px;padding:0 0 6px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim);flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(232,184,75,0.75);margin-right:4px;vertical-align:middle"></span>Natural gas</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(42,122,176,0.75);margin-right:4px;vertical-align:middle"></span>Nuclear</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(58,144,80,0.75);margin-right:4px;vertical-align:middle"></span>Wind</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(224,180,40,0.75);margin-right:4px;vertical-align:middle"></span>Solar</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(90,90,58,0.75);margin-right:4px;vertical-align:middle"></span>Coal</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(42,112,96,0.75);margin-right:4px;vertical-align:middle"></span>Hydro</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px">MONTHLY US ELECTRICITY GENERATION BY FUEL TYPE (GWH) &bull; ALL SECTORS &bull; 24 MONTHS</div>
+      <div style="position:relative;height:240px"><canvas id="eia-extra-c5"></canvas></div>
+    </div>
+  </div>
+
+</div>
+
+
 <!-- ===== PAGE: STATISTICS ===== -->
 
 <!-- ===== PAGE: STATISTICS ===== -->
@@ -983,6 +1125,7 @@
   <script src="js/api.js"></script>
 <script src="js/ei_stats_page.js"></script>
 <script src="js/eia_charts.js"></script>
+<script src="js/eia_extra.js"></script>
 <script src="js/app.js"></script>
 <script>
   // Populate full news page on load
