@@ -32,6 +32,11 @@ export default async function handler(req) {
 
   const [oil, ais, eia] = results;
 
+  // Trigger events refresh (daily is fine, but hourly keeps dates fresh)
+  fetch(`${siteUrl}/.netlify/functions/fetch-events`, {
+    method: 'POST', headers: { 'x-trigger': 'scheduled' },
+  }).catch(e => console.warn('[scheduled] fetch-events:', e.message));
+
   // Trigger EIA extra (non-critical, fire-and-forget)
   fetch(`${siteUrl}/.netlify/functions/fetch-eia-extra`, {
     method: 'POST', headers: { 'x-trigger': 'scheduled' },
