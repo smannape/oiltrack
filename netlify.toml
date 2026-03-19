@@ -100,6 +100,17 @@
   force  = true
 
 [[redirects]]
+  from   = "/api/events"
+  to     = "/.netlify/functions/get-events"
+  status = 200
+
+[[redirects]]
+  from   = "/api/events-refresh"
+  to     = "/.netlify/functions/get-events"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
