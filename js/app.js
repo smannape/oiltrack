@@ -33,6 +33,7 @@
   // ?? BOOT ???????????????????????????????????????????????????
   document.addEventListener('DOMContentLoaded', () => {
     buildTicker();
+    loadEvents();
     startClock();
     renderPriceGrid();
     renderNewsPanel([]);
@@ -425,6 +426,57 @@
          <span style="color:var(--text-primary)">${p.rate}</span>
        </div>`
     ).join('');
+  }
+
+  // ============================================================
+  // UPCOMING EVENTS  --  /api/events
+  // ============================================================
+  function renderEvents(events) {
+    const el = document.getElementById('events-list');
+    if (!el) return;
+    if (!events || !events.length) {
+      el.innerHTML = '<div style="padding:6px 0;color:var(--text-dim);font-size:10px">No upcoming events</div>';
+      return;
+    }
+    const sourceColor = {
+      EIA: 'var(--accent-orange)', IEA: '#e8b84b',
+      OPEC: '#e05a5a', 'CME/NYMEX': '#4a9ab0', ICE: '#2a7ab0',
+    };
+    function daysUntil(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const now = new Date(); now.setHours(0,0,0,0);
+      const diff = Math.round((d - now) / 86400000);
+      if (diff === 0) return '<span style="color:#e05a5a;font-weight:700">TODAY</span>';
+      if (diff === 1) return '<span style="color:#ffb300">TOMORROW</span>';
+      if (diff <= 7)  return '<span style="color:#ffb300">in ' + diff + 'd</span>';
+      return '<span style="color:var(--text-dim)">in ' + diff + 'd</span>';
+    }
+    const shown = events.slice(0, 6);
+    el.innerHTML = shown.map(function(e, i) {
+      const col  = sourceColor[e.source] || 'var(--accent-orange)';
+      const border = i < shown.length - 1 ? 'border-bottom:1px solid rgba(30,45,69,0.35);' : '';
+      const click  = e.url ? ' onclick="window.open(\'' + e.url + '\',\'_blank\')" style="cursor:pointer"' : '';
+      return '<div style="padding:7px 0;' + border + '"' + click + '>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">' +
+          '<span style="color:' + col + ';font-size:9px;letter-spacing:.5px">' +
+            e.displayDate + ' &bull; ' + e.source + '</span>' + daysUntil(e.date) +
+        '</div>' +
+        '<div style="color:var(--text-primary);font-size:11px;line-height:1.4">' + escapeHtml(e.label) + '</div>' +
+        (e.note ? '<div style="color:var(--text-dim);font-size:9px;margin-top:2px">' + escapeHtml(e.note) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    const badge = document.getElementById('events-badge');
+    if (badge) { badge.textContent = events.length + ' events'; badge.style.color = 'var(--accent-green)'; }
+  }
+
+  function loadEvents() {
+    fetch('/api/events')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.events && d.events.length) { renderEvents(d.events); }
+        else if (d.status === 'initializing') { setTimeout(loadEvents, 8000); }
+      })
+      .catch(function(e){ console.warn('[events] fetch error:', e.message); });
   }
 
   // ============================================================
