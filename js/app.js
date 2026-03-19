@@ -19,6 +19,7 @@
     statsInitialized:  false,
     countryInitialized: false,
     eiaChartsInitialized: false,
+    eiaExtraInitialized:  false,
     liveNews:          [],
     telegramNews:      [],
     fxRates:           null,
@@ -989,7 +990,8 @@
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page)?.classList.add('active');
     document.querySelectorAll('[data-page]').forEach(l => l.classList.toggle('active', l.dataset.page === page));
-    if (page === 'charts') { initChartsPage(); initEIACharts(); }
+    if (page === 'charts')       { initChartsPage(); initEIACharts(); }
+    if (page === 'charts-extra') { initEIAExtra(); }
     if (page === 'stats')  initStatsPage();
     if (page === 'country') initCountryPage();
     if (page === 'news')    initNewsFilters();
@@ -1005,6 +1007,19 @@
       });
     });
   }
+
+  function initEIAExtra() {
+    if (state.eiaExtraInitialized) return;
+    state.eiaExtraInitialized = true;
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        if (typeof window.initEIAExtraPage === 'function') {
+          window.initEIAExtraPage();
+        }
+      });
+    });
+  }
+
 
   function initNewsFilters() {
     const allNews = () => [...state.telegramNews, ...state.liveNews];
