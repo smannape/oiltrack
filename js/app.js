@@ -30,7 +30,20 @@
     ],
   };
 
-  // ?? BOOT ???????????????????????????????????????????????????
+  // ── Shared ticker news store ─────────────────────────────────
+  // Both RSS and Telegram write here; ticker always rebuilt from union.
+  var _tickerRSS      = [];   // articles from /api/oil-news
+  var _tickerTelegram = [];   // critical items from Telegram
+
+  function rebuildTicker() {
+    // Critical Telegram items lead, then RSS mix
+    var all = _tickerTelegram.concat(_tickerRSS);
+    if (all.length) {
+      updateTickerFromNews(all);
+    }
+  }
+
+  // ── BOOT ──────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     buildTicker();
     loadEvents();
@@ -84,7 +97,8 @@
       state.liveNews = parsedNews;
       renderNewsPanel(parsedNews);
       updateNewsPage(parsedNews);
-      updateTickerFromNews(parsedNews);
+      _tickerRSS = parsedNews;   // update shared store
+      rebuildTicker();            // rebuild with latest from both sources
       setStatusBadge('api-status-news', 'live', 'NEWS LIVE');
     } else {
       console.warn('[CrudeRadar] No live news. Check RSS feeds + GNEWS_API_KEY');
@@ -526,14 +540,14 @@
 
     const items = [
       ...critical.map(a => ({
-        text: a.headline.slice(0, 100),
+        text: (a.headline || a.text || '').slice(0, 100),
         critical: true,
       })),
       ...regular.map(a => ({
-        text: (a.source ? a.source.split(' ')[0] + ': ' : '') + a.headline.slice(0, 90),
+        text: (a.source ? a.source.split(' ')[0] + ': ' : '') + (a.headline || a.text || '').slice(0, 90),
         critical: false,
       })),
-    ];
+    ].filter(i => i.text.length > 5);
 
     if (items.length) buildTicker(items);
   }
@@ -1351,9 +1365,10 @@
     }
     renderTelegramFeed(messages);
     setStatusBadge('api-status-telegram', 'live', 'TELEGRAM LIVE');
-    // Inject critical Telegram items into the news ticker
-    const critical = messages.filter(m => m.critical).slice(0, 3);
-    if (critical.length) updateTickerFromNews(critical.map(m => ({ headline: m.headline, critical: true })));
+    // Write critical Telegram items to shared store then rebuild ticker
+    _tickerTelegram = messages.filter(m => m.critical).slice(0, 5)
+      .map(m => ({ headline: m.headline || '', source: 'Telegram', pubDate: '', critical: true }));
+    rebuildTicker();   // always rebuilds from _tickerTelegram + _tickerRSS
   }
 
   function renderTelegramFeed(messages) {
