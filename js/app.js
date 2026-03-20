@@ -482,43 +482,60 @@
   // ============================================================
   // TICKER
   // ============================================================
-  function buildTicker() {
-    const msgs = CrudeRadar.tickerMessages || [];
+  function buildTicker(items) {
+    // items: array of {text, critical} -- if omitted, use demo messages
+    const msgs = items && items.length ? items : (CrudeRadar.tickerMessages || []);
     if (!msgs.length) return;
-    const doubled = [...msgs, ...msgs];
-    const track   = document.getElementById('ticker-track');
+    // Repeat content enough times that the track is always wider than the container
+    // regardless of how many items there are. Minimum 3 full copies for smooth loop.
+    const copies = Math.max(3, Math.ceil(6 / msgs.length));
+    let repeated = [];
+    for (let i = 0; i < copies; i++) repeated = repeated.concat(msgs);
+
+    const track = document.getElementById('ticker-track');
     if (!track) return;
-    track.innerHTML = doubled.map(m =>
-      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">*</span> ${m.text}</span>`
+
+    // Pause, update content, then restart -- avoids mid-animation flash
+    track.classList.remove('is-scrolling');
+    track.innerHTML = repeated.map(m =>
+      '<span class="ticker-item' + (m.critical ? ' critical' : '') + '">' +
+      '<span class="dot">&bull;</span> ' + (m.text || '') + '</span>'
     ).join('');
+
+    // Compute duration: ~14px per char per second feels natural
+    const totalChars = msgs.reduce((s, m) => s + (m.text || '').length, 0);
+    const dur = Math.max(30, Math.min(180, totalChars * 0.22));
+    track.style.setProperty('--ticker-dur', dur + 's');
+
+    // Force reflow then start animation (prevents restart flash)
+    void track.offsetWidth;
+    track.classList.add('is-scrolling');
   }
 
   function updateTickerFromNews(articles) {
-    // Use critical items first, then recent headlines to fill the ticker
-    const cutoff  = Date.now() - 21 * 24 * 60 * 60 * 1000;
-    const recent  = articles.filter(a => {
-      if (!a.pubDate && !a.time) return true;
-      const d = new Date(a.pubDate || 0);
+    const cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
+    const recent = (articles || []).filter(a => {
+      if (!a.pubDate) return true;
+      const d = new Date(a.pubDate);
       return isNaN(d) || d.getTime() >= cutoff;
     });
-    const critical = recent.filter(a => a.critical).slice(0, 5);
-    const regular  = recent.filter(a => !a.critical).slice(0, 20);
-    const tickerItems = [
-      ...critical.map(a => ({ text: a.headline.slice(0, 100), critical: true })),
-      ...regular.map(a => ({ text: '[' + (a.source || 'NEWS').split(' ')[0] + '] ' + a.headline.slice(0, 90), critical: false })),
+
+    // Build ordered item list: breaking first, then regular headlines
+    const critical = recent.filter(a => a.critical).slice(0, 8);
+    const regular  = recent.filter(a => !a.critical).slice(0, 15);
+
+    const items = [
+      ...critical.map(a => ({
+        text: a.headline.slice(0, 100),
+        critical: true,
+      })),
+      ...regular.map(a => ({
+        text: (a.source ? a.source.split(' ')[0] + ': ' : '') + a.headline.slice(0, 90),
+        critical: false,
+      })),
     ];
-    if (!tickerItems.length) return;
-    // Duplicate for seamless loop
-    const doubled = [...tickerItems, ...tickerItems];
-    const track   = document.getElementById('ticker-track');
-    if (!track) return;
-    track.innerHTML = doubled.map(m =>
-      `<span class="ticker-item${m.critical ? ' critical' : ''}"><span class="dot">*</span> ${m.text}</span>`
-    ).join('');
-    // Fix animation speed based on content length
-    const totalChars = tickerItems.reduce((s, m) => s + m.text.length, 0);
-    const duration = Math.max(40, Math.min(120, totalChars * 0.18));
-    track.style.animationDuration = duration + 's';
+
+    if (items.length) buildTicker(items);
   }
 
   // ============================================================
