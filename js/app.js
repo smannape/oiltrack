@@ -165,7 +165,11 @@
     CrudeRadar.tankers = normalised;
     renderTankersTable(normalised);
     updateTankerStats(normalised, liveTankers.length);
-    if (state.mapMode === 'tankers') renderMapMode('tankers');
+    // Always refresh tanker layer on live data - tankers is the default view
+    if (state.map) {
+      const currentMode = state.mapMode || 'tankers';
+      if (currentMode === 'tankers') renderMapMode('tankers');
+    }
 
     const badge = liveTankers.length > 0
       ? `AIS LIVE . ${liveTankers.length} vessels`
@@ -930,7 +934,12 @@
       const attr = document.querySelector('.leaflet-control-attribution');
       if (attr) Object.assign(attr.style, { background:'rgba(10,12,15,0.85)',color:'#4a6078',fontSize:'9px',border:'1px solid #1e2d45' });
     }, 500);
-    renderMapMode('production');
+    // Default to tankers view so ships are visible immediately
+    renderMapMode('tankers');
+    // Mark tankers button active by default
+    document.querySelectorAll('.map-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === 'tankers');
+    });
     document.querySelectorAll('.map-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
