@@ -111,6 +111,17 @@
   force  = true
 
 [[redirects]]
+  from   = "/api/stocks"
+  to     = "/.netlify/functions/get-stocks"
+  status = 200
+
+[[redirects]]
+  from   = "/api/stocks-refresh"
+  to     = "/.netlify/functions/get-stocks"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
