@@ -1236,10 +1236,10 @@
     const eia = document.getElementById('cfg-eia-key').value.trim();
     const gnews = document.getElementById('cfg-gnews-key').value.trim();
     const newsapi = document.getElementById('cfg-newsapi-key').value.trim();
-    if (av) { localStorage.setItem('cr_av_key', av); CrudeAPI.KEYS.alphaVantage = av; }
-    if (eia) { localStorage.setItem('cr_eia_key', eia); CrudeAPI.KEYS.eia = eia; }
-    if (gnews) { localStorage.setItem('cr_gnews_key', gnews); CrudeAPI.KEYS.gnews = gnews; }
-    if (newsapi) { localStorage.setItem('cr_newsapi_key', newsapi); CrudeAPI.KEYS.newsapi = newsapi; }
+    if (av)     { localStorage.setItem('cr_av_key', av); if (CrudeAPI.KEYS) CrudeAPI.KEYS.alphaVantage = av; }
+    if (eia)    { localStorage.setItem('cr_eia_key', eia); if (CrudeAPI.KEYS) CrudeAPI.KEYS.eia = eia; }
+    if (gnews)  { localStorage.setItem('cr_gnews_key', gnews); if (CrudeAPI.KEYS) CrudeAPI.KEYS.gnews = gnews; }
+    if (newsapi){ localStorage.setItem('cr_newsapi_key', newsapi); if (CrudeAPI.KEYS) CrudeAPI.KEYS.newsapi = newsapi; }
     document.getElementById('api-config-panel').style.display = 'none';
     // Show feedback
     const btn = document.querySelector('#api-config-panel button');
@@ -1252,10 +1252,12 @@
     const eia = localStorage.getItem('cr_eia_key');
     const gnews = localStorage.getItem('cr_gnews_key');
     const newsapi = localStorage.getItem('cr_newsapi_key');
-    if (av) CrudeAPI.KEYS.alphaVantage = av;
-    if (eia) CrudeAPI.KEYS.eia = eia;
-    if (gnews) CrudeAPI.KEYS.gnews = gnews;
-    if (newsapi) CrudeAPI.KEYS.newsapi = newsapi;
+    if (CrudeAPI.KEYS) {
+      if (av)     CrudeAPI.KEYS.alphaVantage = av;
+      if (eia)    CrudeAPI.KEYS.eia = eia;
+      if (gnews)  CrudeAPI.KEYS.gnews = gnews;
+      if (newsapi)CrudeAPI.KEYS.newsapi = newsapi;
+    }
   });
 
   // Populate full news page with static data initially
