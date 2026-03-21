@@ -972,15 +972,57 @@
     CrudeRadar.production.forEach(p => {
       const ll = COUNTRY_LATLNG[p.code];
       if (!ll) return;
-      const r = Math.max(10, Math.min(44, p.production * 3.4));
-      const color = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#00b0ff';
-      const circle = L.circleMarker(ll, { radius:r, fillColor:color, color, weight:1.5, opacity:0.85, fillOpacity:0.3 });
-      circle.bindPopup(makePopup('#ff6b00', p.country.toUpperCase(), [
-        `Production: <span style="color:#fff">${p.production} Mb/d</span>`,
-        `Consumption: <span style="color:#fff">${p.consumption} Mb/d</span>`,
-        `Company: <span style="color:#ff6b00">${p.company}</span>`,
-      ]), { className:'crude-popup', closeButton:false });
-      group.addLayer(circle);
+
+      // Size barrel icon by production volume
+      const sz  = p.production >= 10 ? 34 : p.production >= 5 ? 28 : 22;
+      const col = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
+      const cap = p.production >= 10 ? '#c84d00' : p.production >= 5 ? '#c28800' : '#2a80b0';
+
+      // SVG barrel icon -- amber/orange on dark bg
+      const barrelSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.85"/>
+        <rect x="9" y="6" width="14" height="20" rx="2.5" fill="${col}"/>
+        <ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="${cap}"/>
+        <ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="${cap}"/>
+        <rect x="8.5" y="12.5" width="15" height="2" fill="#0a0e14" opacity="0.45"/>
+        <rect x="8.5" y="17.5" width="15" height="2" fill="#0a0e14" opacity="0.45"/>
+      </svg>`;
+
+      const icon = L.divIcon({
+        html: barrelSVG,
+        iconSize:   [sz, sz],
+        iconAnchor: [sz/2, sz/2],
+        className:  'crude-barrel-icon',
+      });
+
+      const marker = L.marker(ll, { icon });
+
+      // Hover tooltip -- opens on mouseover, closes on mouseout
+      const net = (p.production - p.consumption).toFixed(1);
+      const netStr = parseFloat(net) >= 0
+        ? '<span style="color:#00e676">+' + net + ' Mb/d (exporter)</span>'
+        : '<span style="color:#e05a5a">' + net + ' Mb/d (importer)</span>';
+
+      const tooltipHTML =
+        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;' +
+        'min-width:190px;font-family:\'Share Tech Mono\',monospace;pointer-events:none">' +
+          '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">' + p.country.toUpperCase() + '</div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Production: <span style="color:#fff">' + p.production + ' Mb/d</span></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Consumption: <span style="color:#fff">' + p.consumption + ' Mb/d</span></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Net: ' + netStr + '</div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Share: <span style="color:#fff">' + p.share + '%</span></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Operator: <span style="color:' + col + '">' + p.company + '</span></div>' +
+        '</div>';
+
+      marker.bindTooltip(tooltipHTML, {
+        permanent:   false,
+        direction:   'top',
+        offset:      [0, -sz/2 - 4],
+        opacity:     1,
+        className:   'crude-barrel-tooltip',
+      });
+
+      group.addLayer(marker);
     });
     group.addTo(state.map);
     state.mapLayers.production = group;
@@ -1049,11 +1091,27 @@
     const title = document.getElementById('map-legend-title');
     if (!items) return;
     if (mode === 'production') {
-      if (title) title.textContent = 'PRODUCTION (Mb/d)';
-      items.innerHTML = `
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff6b00"></div>>10 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>5-10 Mb/d</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>1-5 Mb/d</div>`;
+      if (title) title.textContent = 'PRODUCTION';
+      items.innerHTML =
+        '<div class="map-legend-item">' +
+          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
+          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#ff6b00"/>' +
+          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#c84d00"/>' +
+          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#c84d00"/>' +
+          '</svg>&nbsp; &gt;10 Mb/d</div>' +
+        '<div class="map-legend-item">' +
+          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
+          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#ffb300"/>' +
+          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#c28800"/>' +
+          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#c28800"/>' +
+          '</svg>&nbsp; 5-10 Mb/d</div>' +
+        '<div class="map-legend-item">' +
+          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
+          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#4ab0e0"/>' +
+          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#2a80b0"/>' +
+          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#2a80b0"/>' +
+          '</svg>&nbsp; 1-5 Mb/d</div>' +
+        '<div class="map-legend-item" style="font-size:8px;color:#3a5060;margin-top:4px">Hover barrel for details</div>';
     } else if (mode === 'tankers') {
       if (title) title.textContent = 'TANKER STATUS';
       items.innerHTML = `
