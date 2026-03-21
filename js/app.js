@@ -20,6 +20,7 @@
     countryInitialized: false,
     eiaChartsInitialized: false,
     eiaExtraInitialized:  false,
+    stocksInitialized:    false,
     liveNews:          [],
     telegramNews:      [],
     fxRates:           null,
@@ -1075,6 +1076,7 @@
     document.querySelectorAll('[data-page]').forEach(l => l.classList.toggle('active', l.dataset.page === page));
     if (page === 'charts')       { initChartsPage(); initEIACharts(); }
     if (page === 'charts-extra') { initEIAExtra(); }
+    if (page === 'stocks')        { initStocks(); }
     if (page === 'stats')  initStatsPage();
     if (page === 'country') initCountryPage();
     if (page === 'news')    initNewsFilters();
@@ -1087,6 +1089,24 @@
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         if (typeof window.initEIAChartsPage === 'function') window.initEIAChartsPage();
+      });
+    });
+  }
+
+  function initStocks() {
+    if (state.stocksInitialized) {
+      if (typeof window.initStocksPage === 'function') window.initStocksPage();
+      return;
+    }
+    state.stocksInitialized = true;
+    // expose reload hook for refresh button
+    window._stocksReload = function () {
+      state.stocksInitialized = false;
+      window.initStocksPage && window.initStocksPage();
+    };
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (typeof window.initStocksPage === 'function') window.initStocksPage();
       });
     });
   }
