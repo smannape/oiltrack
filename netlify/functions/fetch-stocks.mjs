@@ -177,7 +177,12 @@ function parseQuote(r, ticker) {
     week52Low:  n(r.fiftyTwoWeekLow),
     marketCap:  ni(r.marketCap),
     pe:         r.trailingPE != null ? parseFloat(parseFloat(r.trailingPE).toFixed(1)) : null,
-    divYield:   r.dividendYield != null ? parseFloat((r.dividendYield * 100).toFixed(2)) : null,
+    // Yahoo v7 returns dividendYield inconsistently:
+    // sometimes as fraction (0.0329) sometimes as percent already (3.29)
+    // Normalize: if value > 1 it's already a percent, else multiply by 100
+    divYield:   r.dividendYield != null
+      ? parseFloat((r.dividendYield > 1 ? r.dividendYield : r.dividendYield * 100).toFixed(2))
+      : null,
     sparkline:  [],
   };
 }
