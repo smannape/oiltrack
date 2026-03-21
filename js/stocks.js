@@ -5,6 +5,11 @@
 (function () {
   'use strict';
 
+  // Local escapeHtml -- app.js version is private inside its IIFE
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   var _allStocks    = [];
   var _filterCat    = 'ALL';
   var _sortBy       = 'order';
