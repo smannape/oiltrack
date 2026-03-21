@@ -968,58 +968,58 @@
   }
 
   function renderProductionLayer() {
-    const group = L.layerGroup();
-    CrudeRadar.production.forEach(p => {
-      const ll = COUNTRY_LATLNG[p.code];
+    var group = L.layerGroup();
+    CrudeRadar.production.forEach(function(p) {
+      var ll = COUNTRY_LATLNG[p.code];
       if (!ll) return;
 
-      // Size barrel icon by production volume
-      const sz  = p.production >= 10 ? 34 : p.production >= 5 ? 28 : 22;
-      const col = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
-      const cap = p.production >= 10 ? '#c84d00' : p.production >= 5 ? '#c28800' : '#2a80b0';
+      var sz  = p.production >= 10 ? 36 : p.production >= 5 ? 28 : 22;
+      var col = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
+      var cap = p.production >= 10 ? '#c84d00' : p.production >= 5 ? '#c28800' : '#2a80b0';
 
-      // SVG barrel icon -- amber/orange on dark bg
-      const barrelSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 32 32">
-        <rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.85"/>
-        <rect x="9" y="6" width="14" height="20" rx="2.5" fill="${col}"/>
-        <ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="${cap}"/>
-        <ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="${cap}"/>
-        <rect x="8.5" y="12.5" width="15" height="2" fill="#0a0e14" opacity="0.45"/>
-        <rect x="8.5" y="17.5" width="15" height="2" fill="#0a0e14" opacity="0.45"/>
-      </svg>`;
+      // Build barrel icon as a single-line div with inline SVG data-URI
+      // Using img with data-URI avoids ALL Leaflet HTML rendering issues
+      var svgContent = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\' viewBox=\'0 0 32 32\'>' +
+        '<rect width=\'32\' height=\'32\' rx=\'5\' fill=\'#0a0e14\' opacity=\'.85\'/>' +
+        '<rect x=\'9\' y=\'6\' width=\'14\' height=\'20\' rx=\'2.5\' fill=\'' + col + '\'/>' +
+        '<ellipse cx=\'16\' cy=\'7\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
+        '<ellipse cx=\'16\' cy=\'26\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
+        '<rect x=\'8.5\' y=\'12.5\' width=\'15\' height=\'2\' fill=\'#0a0e14\' opacity=\'.4\'/>' +
+        '<rect x=\'8.5\' y=\'17.5\' width=\'15\' height=\'2\' fill=\'#0a0e14\' opacity=\'.4\'/>' +
+        '</svg>';
+      var encoded = 'data:image/svg+xml;base64,' + btoa(svgContent);
+      var iconHtml = '<img src="' + encoded + '" width="' + sz + '" height="' + sz + '" style="display:block">';
 
-      const icon = L.divIcon({
-        html: barrelSVG,
+      var icon = L.divIcon({
+        html:       iconHtml,
         iconSize:   [sz, sz],
-        iconAnchor: [sz/2, sz/2],
+        iconAnchor: [sz / 2, sz / 2],
         className:  'crude-barrel-icon',
       });
 
-      const marker = L.marker(ll, { icon });
+      var marker = L.marker(ll, { icon: icon });
 
-      // Hover tooltip -- opens on mouseover, closes on mouseout
-      const net = (p.production - p.consumption).toFixed(1);
-      const netStr = parseFloat(net) >= 0
-        ? '<span style="color:#00e676">+' + net + ' Mb/d (exporter)</span>'
-        : '<span style="color:#e05a5a">' + net + ' Mb/d (importer)</span>';
+      // Tooltip on hover
+      var net    = (p.production - p.consumption).toFixed(1);
+      var netCol = parseFloat(net) >= 0 ? '#00e676' : '#e05a5a';
+      var netLbl = (parseFloat(net) >= 0 ? '+' : '') + net + ' Mb/d ' + (parseFloat(net) >= 0 ? '(exporter)' : '(importer)');
 
-      const tooltipHTML =
-        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;' +
-        'min-width:190px;font-family:\'Share Tech Mono\',monospace;pointer-events:none">' +
+      var tip =
+        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:190px;font-family:monospace">' +
           '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">' + p.country.toUpperCase() + '</div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Production: <span style="color:#fff">' + p.production + ' Mb/d</span></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Consumption: <span style="color:#fff">' + p.consumption + ' Mb/d</span></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Net: ' + netStr + '</div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Share: <span style="color:#fff">' + p.share + '%</span></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Operator: <span style="color:' + col + '">' + p.company + '</span></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Production: <b style="color:#fff">' + p.production + ' Mb/d</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Consumption: <b style="color:#fff">' + p.consumption + ' Mb/d</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Net: <b style="color:' + netCol + '">' + netLbl + '</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Global share: <b style="color:#fff">' + p.share + '%</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Operator: <b style="color:' + col + '">' + p.company + '</b></div>' +
         '</div>';
 
-      marker.bindTooltip(tooltipHTML, {
-        permanent:   false,
-        direction:   'top',
-        offset:      [0, -sz/2 - 4],
-        opacity:     1,
-        className:   'crude-barrel-tooltip',
+      marker.bindTooltip(tip, {
+        permanent:  false,
+        direction:  'top',
+        offset:     L.point(0, -sz / 2 - 4),
+        opacity:    1,
+        className:  'crude-barrel-tooltip',
       });
 
       group.addLayer(marker);
@@ -1027,7 +1027,6 @@
     group.addTo(state.map);
     state.mapLayers.production = group;
   }
-
   function renderConsumptionLayer() {
     const group = L.layerGroup();
     const data = [
