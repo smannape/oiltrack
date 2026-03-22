@@ -976,38 +976,49 @@
       var ll = COUNTRY_LATLNG[p.code];
       if (!ll) return;
 
-      var sz  = p.production >= 10 ? 36 : p.production >= 5 ? 28 : 22;
+      var sz  = p.production >= 10 ? 38 : p.production >= 5 ? 30 : 24;
       var col = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
       var cap = p.production >= 10 ? '#c84d00' : p.production >= 5 ? '#c28800' : '#2a80b0';
+      var bw  = Math.round(sz * 0.44);  // barrel body width
+      var bh  = Math.round(sz * 0.62);  // barrel body height
+      var ew  = Math.round(sz * 0.50);  // ellipse width
+      var eh  = Math.round(sz * 0.16);  // ellipse height
+      var hw  = Math.round(sz * 0.50);  // hoop width
+      var hh  = Math.max(2, Math.round(sz * 0.07));  // hoop height
 
-      // Build barrel icon as a single-line div with inline SVG data-URI
-      // Using img with data-URI avoids ALL Leaflet HTML rendering issues
-      // Transparent background -- barrel floats on map, black drop-shadow for contrast
-      var svgContent = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\' viewBox=\'0 0 32 32\'>' +
-        '<defs><filter id=\'g\'><feDropShadow dx=\'0\' dy=\'0\' stdDeviation=\'2.5\' flood-color=\'black\' flood-opacity=\'1\'/></filter></defs>' +
-        '<g filter=\'url(#g)\'>' +
-        '<rect x=\'9\' y=\'6\' width=\'14\' height=\'20\' rx=\'2.5\' fill=\'' + col + '\'/>' +
-        '<ellipse cx=\'16\' cy=\'7\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
-        '<ellipse cx=\'16\' cy=\'26\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
-        '<rect x=\'8.5\' y=\'12.5\' width=\'15\' height=\'2\' fill=\'rgba(0,0,0,0.4)\'/>' +
-        '<rect x=\'8.5\' y=\'17.5\' width=\'15\' height=\'2\' fill=\'rgba(0,0,0,0.4)\'/>' +
-        '</g></svg>';
-      var encoded = 'data:image/svg+xml;base64,' + btoa(svgContent);
-      var iconHtml = '<img src="' + encoded + '" width="' + sz + '" height="' + sz + '" style="display:block">';
+      // Pure CSS barrel -- no SVG, no base64, no image loading
+      // Outer div = black outline circle for contrast on any map tile
+      var html =
+        '<div style="width:' + sz + 'px;height:' + sz + 'px;position:relative;filter:drop-shadow(0 0 3px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,0.8))">' +
+          // Barrel body
+          '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
+            'width:' + bw + 'px;height:' + bh + 'px;background:' + col + ';border-radius:3px">' +
+            // Top cap (ellipse via border-radius)
+            '<div style="position:absolute;top:-' + Math.round(eh/2) + 'px;left:50%;transform:translateX(-50%);' +
+              'width:' + ew + 'px;height:' + eh + 'px;background:' + cap + ';border-radius:50%"></div>' +
+            // Bottom cap
+            '<div style="position:absolute;bottom:-' + Math.round(eh/2) + 'px;left:50%;transform:translateX(-50%);' +
+              'width:' + ew + 'px;height:' + eh + 'px;background:' + cap + ';border-radius:50%"></div>' +
+            // Hoop 1
+            '<div style="position:absolute;top:28%;left:0;right:0;height:' + hh + 'px;background:rgba(0,0,0,0.35)"></div>' +
+            // Hoop 2
+            '<div style="position:absolute;top:55%;left:0;right:0;height:' + hh + 'px;background:rgba(0,0,0,0.35)"></div>' +
+          '</div>' +
+        '</div>';
 
       var icon = L.divIcon({
-        html:       iconHtml,
+        html:       html,
         iconSize:   [sz, sz],
         iconAnchor: [sz / 2, sz / 2],
-        className:  'crude-barrel-icon',
+        className:  '',
       });
 
       var marker = L.marker(ll, { icon: icon });
 
-      // Tooltip on hover
       var net    = (p.production - p.consumption).toFixed(1);
       var netCol = parseFloat(net) >= 0 ? '#00e676' : '#e05a5a';
-      var netLbl = (parseFloat(net) >= 0 ? '+' : '') + net + ' Mb/d ' + (parseFloat(net) >= 0 ? '(exporter)' : '(importer)');
+      var netLbl = (parseFloat(net) >= 0 ? '+' : '') + net + ' Mb/d ' +
+                  (parseFloat(net) >= 0 ? '(exporter)' : '(importer)');
 
       var tip =
         '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:190px;font-family:monospace">' +
@@ -1032,6 +1043,7 @@
     group.addTo(state.map);
     state.mapLayers.production = group;
   }
+
   function renderConsumptionLayer() {
     const group = L.layerGroup();
     const data = [
