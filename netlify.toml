@@ -9,11 +9,7 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# ── SCHEDULED FUNCTION ───────────────────────────────────────
-# Fires every hour. Kicks off background function which does
-# the actual heavy data fetch (up to 15 min on Pro).
-[functions."scheduled-refresh"]
-  schedule = "0 * * * *"
+# Schedule defined inline in scheduled-refresh.mjs via export const config
 
 # ── API REDIRECTS ─────────────────────────────────────────────
 [[redirects]]
@@ -141,14 +137,14 @@
 [[headers]]
   for = "/js/*.js"
   [headers.values]
-    Cache-Control             = "public, max-age=3600, stale-while-revalidate=86400"
-    Netlify-CDN-Cache-Control = "public, max-age=3600, stale-while-revalidate=86400, durable"
+    Cache-Control             = "no-cache, no-store, must-revalidate"
+    Netlify-CDN-Cache-Control = "no-cache"
 
 [[headers]]
   for = "/css/*.css"
   [headers.values]
-    Cache-Control             = "public, max-age=3600, stale-while-revalidate=86400"
-    Netlify-CDN-Cache-Control = "public, max-age=3600, stale-while-revalidate=86400, durable"
+    Cache-Control             = "no-cache, no-store, must-revalidate"
+    Netlify-CDN-Cache-Control = "no-cache"
 
 [[headers]]
   for = "/api/*"
