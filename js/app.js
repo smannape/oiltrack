@@ -936,12 +936,14 @@
     }, 500);
     // Default to tankers view so ships are visible immediately
     renderMapMode('tankers');
+    // Force Leaflet to recompute layout after first render
+    setTimeout(function() { if (state.map) state.map.invalidateSize(); }, 100);
     // Mark tankers button active by default
     document.querySelectorAll('.map-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === 'tankers');
     });
     document.querySelectorAll('.map-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', function() {
         document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.mapMode = btn.dataset.mode;
@@ -953,11 +955,12 @@
 
   function renderMapMode(mode) {
     if (!state.map) return;
+    state.map.invalidateSize();
     Object.values(state.mapLayers).forEach(l => { if (l) state.map.removeLayer(l); });
     state.mapLayers = { tankers: null, production: null, consumption: null };
-    if (mode === 'production')  renderProductionLayer();
+    if (mode === 'production')       renderProductionLayer();
     else if (mode === 'consumption') renderConsumptionLayer();
-    else if (mode === 'tankers') renderTankersLayer();
+    else if (mode === 'tankers')     renderTankersLayer();
   }
 
   function makePopup(borderColor, title, lines) {
