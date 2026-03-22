@@ -982,14 +982,16 @@
 
       // Build barrel icon as a single-line div with inline SVG data-URI
       // Using img with data-URI avoids ALL Leaflet HTML rendering issues
+      // Transparent background -- barrel floats on map, black drop-shadow for contrast
       var svgContent = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\' viewBox=\'0 0 32 32\'>' +
-        '<rect width=\'32\' height=\'32\' rx=\'5\' fill=\'#0a0e14\' opacity=\'.85\'/>' +
+        '<defs><filter id=\'g\'><feDropShadow dx=\'0\' dy=\'0\' stdDeviation=\'2.5\' flood-color=\'black\' flood-opacity=\'1\'/></filter></defs>' +
+        '<g filter=\'url(#g)\'>' +
         '<rect x=\'9\' y=\'6\' width=\'14\' height=\'20\' rx=\'2.5\' fill=\'' + col + '\'/>' +
         '<ellipse cx=\'16\' cy=\'7\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
         '<ellipse cx=\'16\' cy=\'26\' rx=\'7.5\' ry=\'2.5\' fill=\'' + cap + '\'/>' +
-        '<rect x=\'8.5\' y=\'12.5\' width=\'15\' height=\'2\' fill=\'#0a0e14\' opacity=\'.4\'/>' +
-        '<rect x=\'8.5\' y=\'17.5\' width=\'15\' height=\'2\' fill=\'#0a0e14\' opacity=\'.4\'/>' +
-        '</svg>';
+        '<rect x=\'8.5\' y=\'12.5\' width=\'15\' height=\'2\' fill=\'rgba(0,0,0,0.4)\'/>' +
+        '<rect x=\'8.5\' y=\'17.5\' width=\'15\' height=\'2\' fill=\'rgba(0,0,0,0.4)\'/>' +
+        '</g></svg>';
       var encoded = 'data:image/svg+xml;base64,' + btoa(svgContent);
       var iconHtml = '<img src="' + encoded + '" width="' + sz + '" height="' + sz + '" style="display:block">';
 
