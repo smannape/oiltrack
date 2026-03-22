@@ -976,69 +976,55 @@
       var ll = COUNTRY_LATLNG[p.code];
       if (!ll) return;
 
-      var sz  = p.production >= 10 ? 38 : p.production >= 5 ? 30 : 24;
-      var col = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
-      var cap = p.production >= 10 ? '#c84d00' : p.production >= 5 ? '#c28800' : '#2a80b0';
-      var bw  = Math.round(sz * 0.44);  // barrel body width
-      var bh  = Math.round(sz * 0.62);  // barrel body height
-      var ew  = Math.round(sz * 0.50);  // ellipse width
-      var eh  = Math.round(sz * 0.16);  // ellipse height
-      var hw  = Math.round(sz * 0.50);  // hoop width
-      var hh  = Math.max(2, Math.round(sz * 0.07));  // hoop height
+      // Color-coded barrel: orange=major, amber=mid, blue=small
+      var col  = p.production >= 10 ? '#ff6b00' : p.production >= 5 ? '#ffb300' : '#4ab0e0';
+      var size = p.production >= 10 ? 22 : p.production >= 5 ? 18 : 14;
 
-      // Pure CSS barrel -- no SVG, no base64, no image loading
-      // Outer div = black outline circle for contrast on any map tile
-      var html =
-        '<div style="width:' + sz + 'px;height:' + sz + 'px;position:relative;filter:drop-shadow(0 0 3px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,0.8))">' +
-          // Barrel body
-          '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
-            'width:' + bw + 'px;height:' + bh + 'px;background:' + col + ';border-radius:3px">' +
-            // Top cap (ellipse via border-radius)
-            '<div style="position:absolute;top:-' + Math.round(eh/2) + 'px;left:50%;transform:translateX(-50%);' +
-              'width:' + ew + 'px;height:' + eh + 'px;background:' + cap + ';border-radius:50%"></div>' +
-            // Bottom cap
-            '<div style="position:absolute;bottom:-' + Math.round(eh/2) + 'px;left:50%;transform:translateX(-50%);' +
-              'width:' + ew + 'px;height:' + eh + 'px;background:' + cap + ';border-radius:50%"></div>' +
-            // Hoop 1
-            '<div style="position:absolute;top:28%;left:0;right:0;height:' + hh + 'px;background:rgba(0,0,0,0.35)"></div>' +
-            // Hoop 2
-            '<div style="position:absolute;top:55%;left:0;right:0;height:' + hh + 'px;background:rgba(0,0,0,0.35)"></div>' +
-          '</div>' +
-        '</div>';
-
-      var icon = L.divIcon({
-        html:       html,
-        iconSize:   [sz, sz],
-        iconAnchor: [sz / 2, sz / 2],
-        className:  '',
+      // Two-ring marker: outer white ring for visibility + inner colored fill
+      var marker = L.circleMarker(ll, {
+        radius:      size,
+        fillColor:   col,
+        color:       '#ffffff',
+        weight:      2.5,
+        opacity:     1,
+        fillOpacity: 0.85,
       });
 
-      var marker = L.marker(ll, { icon: icon });
+      // Permanent label showing the barrel icon character + production
+      var label = L.divIcon({
+        html: '<div style="font-size:13px;line-height:1;text-shadow:0 0 4px #000,0 0 4px #000">&#x1F6E2;</div>',
+        iconSize:   [16, 16],
+        iconAnchor: [8, 8],
+        className:  '',
+      });
+      var labelMarker = L.marker(ll, { icon: label, interactive: false, zIndexOffset: -100 });
 
+      // Hover tooltip with full details
       var net    = (p.production - p.consumption).toFixed(1);
       var netCol = parseFloat(net) >= 0 ? '#00e676' : '#e05a5a';
       var netLbl = (parseFloat(net) >= 0 ? '+' : '') + net + ' Mb/d ' +
-                  (parseFloat(net) >= 0 ? '(exporter)' : '(importer)');
+                   (parseFloat(net) >= 0 ? '(exporter)' : '(importer)');
 
       var tip =
-        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:190px;font-family:monospace">' +
-          '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">' + p.country.toUpperCase() + '</div>' +
+        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:190px;font-family:monospace;pointer-events:none">' +
+          '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">&#x1F6E2; ' + p.country.toUpperCase() + '</div>' +
           '<div style="color:#8899aa;font-size:10px;margin-top:3px">Production: <b style="color:#fff">' + p.production + ' Mb/d</b></div>' +
           '<div style="color:#8899aa;font-size:10px;margin-top:3px">Consumption: <b style="color:#fff">' + p.consumption + ' Mb/d</b></div>' +
           '<div style="color:#8899aa;font-size:10px;margin-top:3px">Net: <b style="color:' + netCol + '">' + netLbl + '</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Global share: <b style="color:#fff">' + p.share + '%</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Share: <b style="color:#fff">' + p.share + '%</b></div>' +
           '<div style="color:#8899aa;font-size:10px;margin-top:3px">Operator: <b style="color:' + col + '">' + p.company + '</b></div>' +
         '</div>';
 
       marker.bindTooltip(tip, {
         permanent:  false,
         direction:  'top',
-        offset:     L.point(0, -sz / 2 - 4),
+        offset:     L.point(0, -size - 4),
         opacity:    1,
         className:  'crude-barrel-tooltip',
       });
 
       group.addLayer(marker);
+      group.addLayer(labelMarker);
     });
     group.addTo(state.map);
     state.mapLayers.production = group;
@@ -1107,27 +1093,12 @@
     const title = document.getElementById('map-legend-title');
     if (!items) return;
     if (mode === 'production') {
-      if (title) title.textContent = 'PRODUCTION';
+      if (title) title.textContent = 'PRODUCTION (Mb/d)';
       items.innerHTML =
-        '<div class="map-legend-item">' +
-          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
-          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#ff6b00"/>' +
-          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#c84d00"/>' +
-          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#c84d00"/>' +
-          '</svg>&nbsp; &gt;10 Mb/d</div>' +
-        '<div class="map-legend-item">' +
-          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
-          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#ffb300"/>' +
-          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#c28800"/>' +
-          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#c28800"/>' +
-          '</svg>&nbsp; 5-10 Mb/d</div>' +
-        '<div class="map-legend-item">' +
-          '<svg width="12" height="12" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#0a0e14" opacity="0.9"/>' +
-          '<rect x="9" y="6" width="14" height="20" rx="2.5" fill="#4ab0e0"/>' +
-          '<ellipse cx="16" cy="7" rx="7.5" ry="2.5" fill="#2a80b0"/>' +
-          '<ellipse cx="16" cy="26" rx="7.5" ry="2.5" fill="#2a80b0"/>' +
-          '</svg>&nbsp; 1-5 Mb/d</div>' +
-        '<div class="map-legend-item" style="font-size:8px;color:#3a5060;margin-top:4px">Hover barrel for details</div>';
+        '<div class="map-legend-item"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#ff6b00;border:2px solid #fff;vertical-align:middle;margin-right:5px"></span>&gt;10 Mb/d</div>' +
+        '<div class="map-legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ffb300;border:2px solid #fff;vertical-align:middle;margin-right:5px"></span>5-10 Mb/d</div>' +
+        '<div class="map-legend-item"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#4ab0e0;border:2px solid #fff;vertical-align:middle;margin-right:5px"></span>1-5 Mb/d</div>' +
+        '<div class="map-legend-item" style="font-size:8px;color:#3a5060;margin-top:4px">Hover for details</div>';
     } else if (mode === 'tankers') {
       if (title) title.textContent = 'TANKER STATUS';
       items.innerHTML = `
