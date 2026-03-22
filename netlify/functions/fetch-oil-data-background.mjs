@@ -28,15 +28,17 @@ const EIA_KEY        = process.env.EIA_API_KEY         || '';
 const GNEWS_KEY      = process.env.GNEWS_API_KEY       || '';
 const DATALASTIC_KEY = process.env.DATALASTIC_API_KEY  || '';
 
-// ?? OILPRICE API CONTRACTS ????????????????????????????????????
-const PRICE_CONTRACTS = [
-  { code: 'WTI_USD',           id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '??' },
-  { code: 'BRENT_CRUDE_USD',   id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '?'  },
-  { code: 'DUBAI_CRUDE_USD',   id: 'dubai',    name: 'Dubai Crude',   unit: 'USD/bbl',   exchange: 'DME',   flag: '??' },
-  { code: 'NATURAL_GAS_USD',   id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '?'  },
-  { code: 'HEATING_OIL_USD',   id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
-  { code: 'GASOLINE_RBOB_USD', id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
-];
+// OILPRICE API -- 1 call per day fetches ALL contracts at once
+// Endpoint: /v1/prices/latest (no code filter = returns all available)
+// Saves ~170 calls/month vs the old per-contract approach
+const OILPRICE_CONTRACT_MAP = {
+  WTI_USD:           { id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '??' },
+  BRENT_CRUDE_USD:   { id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '?'  },
+  DUBAI_CRUDE_USD:   { id: 'dubai',    name: 'Dubai Crude',   unit: 'USD/bbl',   exchange: 'DME',   flag: '??' },
+  NATURAL_GAS_USD:   { id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '?'  },
+  HEATING_OIL_USD:   { id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
+  GASOLINE_RBOB_USD: { id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
+};
 
 // ?? EIA SERIES ????????????????????????????????????????????????
 const EIA_SERIES = [
@@ -45,9 +47,10 @@ const EIA_SERIES = [
   { id: 'PET.WDISTUS1.W',   key: 'us_distillate',       freq: 'weekly',  length: 52  },
   { id: 'PET.WCRRIUS2.W',   key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
   { id: 'PET.MCRFPUS2.M',   key: 'us_field_production', freq: 'monthly', length: 60  },
-  { id: 'PET.RWTC.M',       key: 'wti_spot_monthly',    freq: 'monthly', length: 60  },
-  { id: 'PET.RBRTE.M',      key: 'brent_spot_monthly',  freq: 'monthly', length: 60  },
-  { id: 'NG.RNGWHHD.D',     key: 'henry_hub_daily',     freq: 'daily',   length: 90  },
+  // EIA price series -- free/unlimited, used as price history + OilPriceAPI fallback
+  { id: 'PET.RWTC.D',   key: 'wti_spot_daily',   freq: 'daily', length: 60 },
+  { id: 'PET.RBRTE.D',  key: 'brent_spot_daily', freq: 'daily', length: 60 },
+  { id: 'NG.RNGWHHD.D', key: 'henry_hub_daily',  freq: 'daily', length: 60 },
 ];
 
 // ?? RSS FEEDS (confirmed working) ????????????????????????????
@@ -140,38 +143,48 @@ async function fetchText(url, timeoutMs = 15000) {
 }
 
 // ==============================================================
-// OILPRICE API
+// OILPRICE API -- single batch call (1 request per day)
 // ==============================================================
 
-async function fetchOilPriceLatest(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/latest?by_code=${contract.code}`;
-  const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
-  if (raw?.status !== 'success' || !raw?.data?.price) return null;
-  const d = raw.data;
-  return {
-    price:     parseFloat(d.price),
-    timestamp: d.created_at,
-    // OilPriceAPI returns 24h change data directly
-    change:    d.changes?.['24h']?.amount  ?? null,
-    changePct: d.changes?.['24h']?.percent ?? null,
-  };
-}
+// Fetch all available prices in ONE call.
+// OilPriceAPI /v1/prices/latest without a code filter returns all contracts.
+// This uses just 1 of the 200 monthly quota per run.
+async function fetchAllOilPrices() {
+  if (!OILPRICE_KEY) return null;
 
-async function fetchOilPriceHistory(contract) {
-  const url = `https://api.oilpriceapi.com/v1/prices/past_month?by_code=${contract.code}`;
-  const raw = await fetchJSON(url, 30000, { 'Authorization': `Token ${OILPRICE_KEY}` });
-  if (raw?.status !== 'success' || !raw?.data?.prices?.length) return [];
-  // Sort ascending then deduplicate -- keep last price per calendar day
-  const sorted = raw.data.prices
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  const byDay = {};
-  sorted.forEach(p => {
-    const day = p.created_at.slice(0, 10); // YYYY-MM-DD
-    byDay[day] = parseFloat(p.price);      // last tick of day wins
-  });
-  return Object.entries(byDay)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([period, value]) => ({ period, value }));
+  const url = 'https://api.oilpriceapi.com/v1/prices/latest';
+  const raw = await fetchJSON(url, 30000, { 'Authorization': 'Token ' + OILPRICE_KEY });
+  if (!raw || raw.status !== 'success' || !Array.isArray(raw.data)) {
+    console.warn('[prices] OilPriceAPI batch call failed or returned no data');
+    return null;
+  }
+
+  // Build map: code -> price entry
+  const result = {};
+  for (const item of raw.data) {
+    const meta = OILPRICE_CONTRACT_MAP[item.code];
+    if (!meta) continue;
+    result[meta.id] = {
+      id:        meta.id,
+      name:      meta.name,
+      unit:      meta.unit,
+      exchange:  meta.exchange,
+      flag:      meta.flag,
+      latest: {
+        price:     parseFloat(item.price),
+        timestamp: item.created_at,
+        change:    item.changes?.['24h']?.amount  ?? null,
+        changePct: item.changes?.['24h']?.percent ?? null,
+      },
+      change:    item.changes?.['24h']?.amount  ?? null,
+      changePct: item.changes?.['24h']?.percent ?? null,
+      history:   [],  // history comes from EIA (free, unlimited)
+    };
+  }
+
+  const found = Object.keys(result);
+  console.log('[prices] OilPriceAPI batch: ' + found.length + ' contracts: ' + found.join(', '));
+  return result;
 }
 
 // ==============================================================
@@ -444,38 +457,43 @@ export default async function handler(req, context) {
   // ?? 1. PRICES (OilPriceAPI) ???????????????????????????????
   const prices = {};
 
+  // Single API call fetches ALL contracts at once.
+  // Guard: only call once per day to stay within 200/month quota.
+  // At hourly schedule: 1 call/day = 30 calls/month. Well within limit.
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  let lastPriceFetch = null;
+  try {
+    const meta = await store.get('prices-meta', { type: 'text' });
+    if (meta) lastPriceFetch = JSON.parse(meta).date;
+  } catch {}
+
   if (!OILPRICE_KEY) {
-    console.warn('[prices] OILPRICE_API_KEY not set');
+    console.warn('[prices] OILPRICE_API_KEY not set -- will use EIA fallback');
     errors.push('OILPRICE_API_KEY missing');
+  } else if (lastPriceFetch === today) {
+    // Already fetched today -- load cached prices instead of calling API
+    console.log('[prices] Already fetched today (' + today + '), loading from blob');
+    try {
+      const cached = await store.get('prices-cache', { type: 'text' });
+      if (cached) Object.assign(prices, JSON.parse(cached));
+    } catch {}
   } else {
-    console.log(`[prices] Fetching ${PRICE_CONTRACTS.length} contracts (sequential)...`);
-
-    for (const c of PRICE_CONTRACTS) {
-      prices[c.id] = {
-        id: c.id, name: c.name, unit: c.unit,
-        exchange: c.exchange, flag: c.flag,
-        latest: null, history: [], change: null, changePct: null,
-      };
-
-      // Fetch latest price
-      const latest = await fetchOilPriceLatest(c);
-      if (latest) {
-        prices[c.id].latest    = latest;
-        prices[c.id].change    = latest.change    ?? null;
-        prices[c.id].changePct = latest.changePct ?? null;
-      }
-
-      await new Promise(r => setTimeout(r, 500));
-
-      // Fetch 30-day history (deduplicated to one price per day)
-      const history = await fetchOilPriceHistory(c);
-      if (history?.length) prices[c.id].history = history;
-
-      await new Promise(r => setTimeout(r, 500));
+    // New day -- call API and cache result
+    const batch = await fetchAllOilPrices();
+    if (batch) {
+      Object.assign(prices, batch);
+      // Cache for rest of the day
+      await store.set('prices-cache', JSON.stringify(batch)).catch(() => {});
+      await store.set('prices-meta', JSON.stringify({ date: today })).catch(() => {});
+      console.log('[prices] Fetched and cached for ' + today);
+    } else {
+      errors.push('OilPriceAPI batch call failed -- EIA fallback will apply');
+      // Try loading yesterday cache
+      try {
+        const cached = await store.get('prices-cache', { type: 'text' });
+        if (cached) { Object.assign(prices, JSON.parse(cached)); console.log('[prices] Using cached prices from previous fetch'); }
+      } catch {}
     }
-
-    const live = Object.values(prices).filter(p => p.latest?.price);
-    console.log(`[prices] Live: ${live.map(p => `${p.id}=$${p.latest.price}`).join(', ')}`);
   }
 
   // ?? 2. EIA DATA ???????????????????????????????????????????
@@ -494,33 +512,49 @@ export default async function handler(req, context) {
     }
     console.log(`[eia] Got ${Object.keys(eia).length}/${EIA_SERIES.length} series`);
 
-    // EIA price fallbacks when OilPriceAPI key not set
-    if (!prices.wti && eia.wti_spot_monthly?.series?.length) {
-      const s = [...eia.wti_spot_monthly.series].reverse();
-      prices.wti = {
-        id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '??',
-        latest:  { price: eia.wti_spot_monthly.latest.value, timestamp: eia.wti_spot_monthly.latest.period },
-        history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.wti_spot_monthly.latest.change, changePct: eia.wti_spot_monthly.latest.changePct,
-      };
+    // EIA price fallbacks: fire when OilPriceAPI missing OR returned no price
+    // Merge EIA daily prices as history into OilPriceAPI contracts
+    // AND as full fallback if OilPriceAPI failed
+    if (eia.wti_spot_daily?.series?.length) {
+      const hist = [...eia.wti_spot_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
+      if (!prices.wti?.latest?.price) {
+        prices.wti = {
+          id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '??',
+          latest: { price: eia.wti_spot_daily.latest.value, timestamp: eia.wti_spot_daily.latest.period },
+          change: eia.wti_spot_daily.latest.change, changePct: eia.wti_spot_daily.latest.changePct,
+          history: hist,
+        };
+        console.log('[prices] WTI from EIA fallback: $' + eia.wti_spot_daily.latest.value);
+      } else {
+        prices.wti.history = hist;  // always use EIA for history (free)
+      }
     }
-    if (!prices.brent && eia.brent_spot_monthly?.series?.length) {
-      const s = [...eia.brent_spot_monthly.series].reverse();
-      prices.brent = {
-        id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '?',
-        latest:  { price: eia.brent_spot_monthly.latest.value, timestamp: eia.brent_spot_monthly.latest.period },
-        history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.brent_spot_monthly.latest.change, changePct: eia.brent_spot_monthly.latest.changePct,
-      };
+    if (eia.brent_spot_daily?.series?.length) {
+      const hist = [...eia.brent_spot_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
+      if (!prices.brent?.latest?.price) {
+        prices.brent = {
+          id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '?',
+          latest: { price: eia.brent_spot_daily.latest.value, timestamp: eia.brent_spot_daily.latest.period },
+          change: eia.brent_spot_daily.latest.change, changePct: eia.brent_spot_daily.latest.changePct,
+          history: hist,
+        };
+        console.log('[prices] Brent from EIA fallback: $' + eia.brent_spot_daily.latest.value);
+      } else {
+        prices.brent.history = hist;
+      }
     }
-    if (!prices.crude_ng && eia.henry_hub_daily?.series?.length) {
-      const s = [...eia.henry_hub_daily.series].slice(0, 30).reverse();
-      prices.crude_ng = {
-        id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?',
-        latest:  { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
-        history: s.map(d => ({ period: d.period, value: d.value })),
-        change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct,
-      };
+    if (eia.henry_hub_daily?.series?.length) {
+      const hist = [...eia.henry_hub_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
+      if (!prices.crude_ng?.latest?.price) {
+        prices.crude_ng = {
+          id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?',
+          latest: { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
+          change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct,
+          history: hist,
+        };
+      } else {
+        prices.crude_ng.history = hist;
+      }
     }
   }
 
