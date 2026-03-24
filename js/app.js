@@ -187,17 +187,45 @@
     CrudeRadar.tankers = normalised;
     renderTankersTable(normalised);
     updateTankerStats(normalised, liveTankers.length);
-    // Always refresh tanker layer on live data - tankers is the default view
-    if (state.map) {
-      const currentMode = state.mapMode || 'tankers';
-      if (currentMode === 'tankers') renderMapMode('tankers');
-    }
+
+    // Render on map -- poll until map is ready (handles cold start + re-renders)
+    renderTankersOnMap();
 
     const badge = liveTankers.length > 0
-      ? `AIS LIVE . ${liveTankers.length} vessels`
+      ? 'AIS LIVE . ' + liveTankers.length + ' vessels'
       : 'AIS CACHED';
     setStatusBadge('api-status-tankers', liveTankers.length > 0 ? 'live' : 'demo', badge);
-    console.log(`[CrudeRadar] AIS: ${liveTankers.length} live, ${staleTankers.length} cached`);
+    console.log('[CrudeRadar] AIS: ' + liveTankers.length + ' live, ' + staleTankers.length + ' cached');
+  }
+
+  // Render tankers on map -- safe to call any time, handles timing automatically
+  window.renderTankersOnMap = function() {};  // placeholder until defined
+  function renderTankersOnMap() {
+    window.renderTankersOnMap = renderTankersOnMap;  // update global ref
+    // Sync state.map from global in case it was set externally
+    if (!state.map && window._crudeMap) state.map = window._crudeMap;
+    // If map not ready yet, retry every 500ms for up to 10s
+    if (!state.map) {
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        if (state.map) {
+          clearInterval(timer);
+          renderTankersOnMap();
+        } else if (attempts > 20) {
+          clearInterval(timer); // give up after 10s
+        }
+      }, 500);
+      return;
+    }
+    // Only render if currently in tankers mode
+    var mode = state.mapMode || 'tankers';
+    if (mode !== 'tankers') return;
+    // Don't render if no data
+    if (!CrudeRadar.tankers || !CrudeRadar.tankers.length) return;
+
+    renderMapMode('tankers');
+    updateMapLegend('tankers');
   }
 
   // ?? TANKER STATS ?????????????????????????????????????????
@@ -948,6 +976,7 @@
     const container = document.getElementById('leaflet-map');
     if (!container || typeof L === 'undefined') return;
     state.map = L.map('leaflet-map', { center:[20,10], zoom:2, minZoom:1, maxZoom:8 });
+    window._crudeMap = state.map;  // expose for external access
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '? <a href="https://openstreetmap.org/copyright" style="color:#ff6b00">OpenStreetMap</a> contributors, ? <a href="https://carto.com/attributions" style="color:#ff6b00">CARTO</a>',
       subdomains: 'abcd', maxZoom: 19,
@@ -956,10 +985,14 @@
       const attr = document.querySelector('.leaflet-control-attribution');
       if (attr) Object.assign(attr.style, { background:'rgba(10,12,15,0.85)',color:'#4a6078',fontSize:'9px',border:'1px solid #1e2d45' });
     }, 500);
-    // Default to tankers view so ships are visible immediately
-    renderMapMode('tankers');
-    // Force Leaflet to recompute layout after first render
-    setTimeout(function() { if (state.map) state.map.invalidateSize(); }, 100);
+    // Set default mode
+    state.mapMode = 'tankers';
+    // Force Leaflet to recompute layout
+    setTimeout(function() {
+      if (state.map) state.map.invalidateSize();
+      // Also try rendering tankers -- data may already be loaded
+      renderTankersOnMap();
+    }, 300);
     // Mark tankers button active by default
     document.querySelectorAll('.map-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === 'tankers');
@@ -978,11 +1011,12 @@
   function renderMapMode(mode) {
     if (!state.map) return;
     state.map.invalidateSize();
-    Object.values(state.mapLayers).forEach(l => { if (l) state.map.removeLayer(l); });
+    Object.values(state.mapLayers).forEach(l => { if (l) try { state.map.removeLayer(l); } catch(e){} });
     state.mapLayers = { tankers: null, production: null, consumption: null };
     if (mode === 'production')       renderProductionLayer();
     else if (mode === 'consumption') renderConsumptionLayer();
     else if (mode === 'tankers')     renderTankersLayer();
+    updateMapLegend(mode);
   }
 
   function makePopup(borderColor, title, lines) {
