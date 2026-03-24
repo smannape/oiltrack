@@ -1058,23 +1058,30 @@
   }
 
   function renderTankersLayer() {
-    const group = L.layerGroup();
-    const colorMap = { underway:'#00e676', anchored:'#ffb300', moored:'#00b0ff' };
-    CrudeRadar.tankers.forEach(t => {
-      const col = colorMap[t.status] || '#8899aa';
-      const icon = L.divIcon({
-        html: `<div style="width:12px;height:12px;border-radius:50%;background:${col};border:1.5px solid rgba(0,0,0,0.5);box-shadow:0 0 8px ${col}55"></div>`,
-        iconSize:[12,12], iconAnchor:[6,6], className:'',
+    var group = L.layerGroup();
+    var colorMap = { underway:'#00e676', anchored:'#ffb300', moored:'#00b0ff' };
+    CrudeRadar.tankers.forEach(function(t) {
+      var col = colorMap[t.status] || '#8899aa';
+      // Use circleMarker -- proven reliable at all zoom levels
+      var marker = L.circleMarker([t.lat, t.lng], {
+        radius:      t.status === 'underway' ? 5 : 4,
+        fillColor:   col,
+        color:       '#000',
+        weight:      1,
+        opacity:     0.9,
+        fillOpacity: 0.85,
       });
-      const marker = L.marker([t.lat, t.lng], { icon });
-      marker.bindPopup(makePopup(col, t.name, [
-        `Type: <span style="color:#e0e8f0">${t.flag} ${t.type}</span>`,
-        `Route: <span style="color:#e0e8f0">${t.from} -> ${t.to}</span>`,
-        `Speed: <span style="color:#e0e8f0">${t.speed} knots</span>`,
-        `Status: <span style="color:${col}">${t.status.toUpperCase()}</span>`,
-        `ETA: <span style="color:#e0e8f0">${t.eta}</span>`,
-        `MMSI: ${t.mmsi}`,
-      ]), { className:'crude-popup', closeButton:false });
+      var tip =
+        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:180px;font-family:monospace">' +
+          '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">' + (t.name || 'UNKNOWN') + '</div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Type: <b style="color:#e0e8f0">' + t.flag + ' ' + t.type + '</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Route: <b style="color:#e0e8f0">' + (t.from||'--') + ' -> ' + (t.to||'--') + '</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Speed: <b style="color:#e0e8f0">' + t.speed + ' kn</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Status: <b style="color:' + col + '">' + (t.status||'').toUpperCase() + '</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">ETA: <b style="color:#e0e8f0">' + (t.eta||'--') + '</b></div>' +
+          '<div style="color:#8899aa;font-size:10px;margin-top:3px">MMSI: ' + t.mmsi + '</div>' +
+        '</div>';
+      marker.bindTooltip(tip, { direction:'top', opacity:1, className:'crude-barrel-tooltip' });
       group.addLayer(marker);
     });
     const lanes = [
