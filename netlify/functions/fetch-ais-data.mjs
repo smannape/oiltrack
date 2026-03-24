@@ -13,7 +13,7 @@
 //   - Writes up to 50 tankers to Netlify Blob 'tankers'
 //
 // ENV VARS:
-//   AISSTREAM_API_KEY — from aisstream.io dashboard (free tier)
+//   AISSTREAM_API_KEY  from aisstream.io dashboard (free tier)
 //
 // Triggered by:
 //   - POST /api/ais-refresh  (manual)
@@ -21,17 +21,19 @@
 // ============================================================
 
 import { getStore } from '@netlify/blobs';
-import WebSocket from 'ws';
+import { WebSocket } from 'ws';  // explicit ws package import
 
 const AIS_KEY = process.env.AISSTREAM_API_KEY || '';
 
-// ── COLLECTION WINDOW ────────────────────────────────────────
+//  COLLECTION WINDOW 
 // 45 seconds to collect as many vessel positions as possible
-const COLLECTION_MS = 45000;
+// 30s collection -- background functions can run longer but 30s gives
+// plenty of AIS messages while keeping response times reasonable
+const COLLECTION_MS = 30000;
 // Max tankers to store in blob (keep payload manageable)
 const MAX_TANKERS   = 60;
 
-// ── BOUNDING BOXES — major oil shipping lanes ────────────────
+//  BOUNDING BOXES  major oil shipping lanes 
 const BOUNDING_BOXES = [
   [[21.0, 50.0], [30.0, 60.0]],     // Persian Gulf + Strait of Hormuz
   [[10.0, 40.0], [25.0, 55.0]],     // Red Sea + Gulf of Aden
@@ -43,17 +45,17 @@ const BOUNDING_BOXES = [
   [[30.0, 118.0], [42.0, 132.0]],   // East China Sea / Korea Strait
 ];
 
-// ── TANKER AIS TYPE CODES ─────────────────────────────────────
+//  TANKER AIS TYPE CODES 
 // 80-89 = Tanker, 70-79 = Cargo (also useful)
 const TANKER_TYPES = new Set([80,81,82,83,84,85,86,87,88,89]);
 
-// ── NAVIGATIONAL STATUS ───────────────────────────────────────
+//  NAVIGATIONAL STATUS 
 const NAV_STATUS = {
   0: 'underway', 1: 'anchored', 2: 'not under command',
   3: 'restricted', 5: 'moored', 6: 'aground',
 };
 
-// ── TANKER CLASS FROM DIMENSIONS ─────────────────────────────
+//  TANKER CLASS FROM DIMENSIONS 
 function tankerClass(dimA, dimB) {
   const len = (dimA || 0) + (dimB || 0);
   if (len >= 350) return 'ULCC';
@@ -64,21 +66,21 @@ function tankerClass(dimA, dimB) {
   return 'Tanker';
 }
 
-// ── FLAG EMOJI FROM MMSI PREFIX ──────────────────────────────
+//  FLAG EMOJI FROM MMSI PREFIX 
 function flagFromMMSI(mmsi) {
   const prefix = String(mmsi).slice(0, 3);
   const flags = {
-    '235':'🇬🇧','211':'🇩🇪','229':'🇬🇷','248':'🇲🇹','249':'🇲🇹',
-    '310':'🇧🇲','311':'🇧🇸','319':'🇰🇾','338':'🇺🇸','357':'🇵🇦',
-    '370':'🇵🇦','371':'🇵🇦','372':'🇵🇦','373':'🇵🇦','374':'🇵🇦',
-    '416':'🇹🇼','431':'🇯🇵','440':'🇰🇷','441':'🇰🇷','477':'🇭🇰',
-    '518':'🇨🇰','525':'🇮🇩','538':'🇲🇭','548':'🇵🇭','563':'🇸🇬',
-    '574':'🇻🇳','620':'🇲🇿','636':'🇱🇷','710':'🇧🇷','720':'🇧🇴',
+    '235':'GB','211':'DE','229':'GR','248':'MT','249':'MT',
+    '310':'BM','311':'BS','319':'KY','338':'US','357':'PA',
+    '370':'PA','371':'PA','372':'PA','373':'PA','374':'PA',
+    '416':'TW','431':'JP','440':'KR','441':'KR','477':'HK',
+    '518':'CK','525':'ID','538':'MH','548':'PH','563':'SG',
+    '574':'VN','620':'MZ','636':'LR','710':'BR','720':'BO',
   };
-  return flags[prefix] || '🚢';
+  return flags[prefix] || 'XX';
 }
 
-// ── MAIN HANDLER ─────────────────────────────────────────────
+//  MAIN HANDLER 
 export default async function handler(req, context) {
   const startTime = Date.now();
   const fetchedAt = new Date().toISOString();
@@ -92,10 +94,10 @@ export default async function handler(req, context) {
   }
 
   const store   = getStore('crude-radar');
-  const vessels = new Map(); // MMSI → vessel data
+  const vessels = new Map(); // MMSI  vessel data
   let messageCount = 0;
 
-  // ── Connect + collect via WebSocket ──────────────────────
+  //  Connect + collect via WebSocket 
   await new Promise((resolve) => {
     const timeout = setTimeout(() => {
       console.log(`[fetch-ais-data] Collection window complete. Messages: ${messageCount}, Vessels: ${vessels.size}`);
@@ -110,10 +112,10 @@ export default async function handler(req, context) {
       ws.send(JSON.stringify({
         APIKey:             AIS_KEY,
         BoundingBoxes:      BOUNDING_BOXES,
-        // No MMSI filter — catch ALL tankers in these regions
+        // No MMSI filter  catch ALL tankers in these regions
         FilterMessageTypes: ['PositionReport', 'ShipStaticData'],
       }));
-      console.log('[fetch-ais-data] Subscription sent — collecting for 45s...');
+      console.log('[fetch-ais-data] Subscription sent  collecting for 45s...');
     });
 
     ws.on('message', (raw) => {
@@ -127,7 +129,7 @@ export default async function handler(req, context) {
         const mmsi  = String(meta.MMSI || '');
         if (!mmsi) return;
 
-        // ── PositionReport ────────────────────────────────
+        //  PositionReport 
         if (type === 'PositionReport') {
           const pos = msg.Message?.PositionReport || {};
 
@@ -155,11 +157,11 @@ export default async function handler(req, context) {
               typeCode:    null,
               flag:        flagFromMMSI(mmsi),
               cargo:       'Crude Oil',
-              destination: '—',
-              eta:         '—',
-              imo:         '—',
-              from:        '—',
-              to:          '—',
+              destination: '',
+              eta:         '',
+              imo:         '',
+              from:        '',
+              to:          '',
               updatedAt:   new Date().toISOString(),
             });
           } else {
@@ -178,7 +180,7 @@ export default async function handler(req, context) {
           }
         }
 
-        // ── ShipStaticData ────────────────────────────────
+        //  ShipStaticData 
         if (type === 'ShipStaticData') {
           const stat = msg.Message?.ShipStaticData || {};
 
@@ -195,9 +197,9 @@ export default async function handler(req, context) {
               typeCode: stat.Type || null,
               flag: flagFromMMSI(mmsi),
               cargo: 'Crude Oil',
-              destination: (stat.Destination || '').trim() || '—',
-              eta: '—', imo: '—', from: '—',
-              to: (stat.Destination || '').trim() || '—',
+              destination: (stat.Destination || '').trim() || '',
+              eta: '', imo: '', from: '',
+              to: (stat.Destination || '').trim() || '',
               updatedAt: new Date().toISOString(),
             });
           } else {
@@ -231,6 +233,7 @@ export default async function handler(req, context) {
     ws.on('error', (err) => {
       console.error('[fetch-ais-data] WebSocket error:', err.message);
       clearTimeout(timeout);
+      try { ws.terminate(); } catch (_) {}
       resolve();
     });
 
@@ -241,7 +244,7 @@ export default async function handler(req, context) {
     });
   });
 
-  // ── Post-process: filter, sort, cap ──────────────────────
+  //  Post-process: filter, sort, cap 
   const tankers = Array.from(vessels.values())
     // Must have a real position
     .filter(v => v.lat !== 0 || v.lng !== 0)
@@ -254,13 +257,13 @@ export default async function handler(req, context) {
 
   console.log(`[fetch-ais-data] Final tankers with positions: ${tankers.length}`);
   tankers.forEach(t => {
-    console.log(`  → ${t.name} (${t.mmsi}) @ ${t.lat.toFixed(2)},${t.lng.toFixed(2)} ${t.speed}kn → ${t.destination}`);
+    console.log(`   ${t.name} (${t.mmsi}) @ ${t.lat.toFixed(2)},${t.lng.toFixed(2)} ${t.speed}kn  ${t.destination}`);
   });
 
-  // ── Merge with previous blob if current run got few results ─
+  //  Merge with previous blob if current run got few results 
   let finalTankers = tankers;
   if (tankers.length < 5) {
-    console.log('[fetch-ais-data] Few live results — merging with previous blob');
+    console.log('[fetch-ais-data] Few live results  merging with previous blob');
     try {
       const prev = await store.get('tankers', { type: 'json' });
       if (prev?.tankers?.length) {
@@ -275,7 +278,7 @@ export default async function handler(req, context) {
     } catch (_) {}
   }
 
-  // ── Write blob ────────────────────────────────────────────
+  //  Write blob 
   const duration_ms = Date.now() - startTime;
   try {
     await store.setJSON('tankers', {
@@ -286,7 +289,7 @@ export default async function handler(req, context) {
       total_count:   finalTankers.length,
       tankers:       finalTankers,
     });
-    console.log(`[fetch-ais-data] Blob written — ${finalTankers.length} tankers in ${duration_ms}ms`);
+    console.log(`[fetch-ais-data] Blob written  ${finalTankers.length} tankers in ${duration_ms}ms`);
   } catch (e) {
     console.error('[fetch-ais-data] Blob write error:', e.message);
   }
