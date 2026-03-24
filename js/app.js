@@ -119,10 +119,23 @@
     }
 
     // ?? Tankers (from AISstream Blob) ???????????????????????
-    if (tankersResult.status === 'fulfilled' && Array.isArray(tankersResult.value)) {
+    if (tankersResult.status === 'fulfilled' && Array.isArray(tankersResult.value) && tankersResult.value.length > 0) {
       applyLiveTankers(tankersResult.value);
     } else {
-      setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
+      // No tankers yet -- blob may be empty on cold start, retry in 30s
+      setStatusBadge('api-status-tankers', 'demo', 'AIS LOADING...');
+      console.log('[CrudeRadar] No tankers on first fetch -- retrying in 30s');
+      setTimeout(function() {
+        CrudeAPI.fetchCachedTankers().then(function(t) {
+          if (t && t.length > 0) {
+            applyLiveTankers(t);
+          } else {
+            setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
+            // Trigger AIS refresh if still empty
+            fetch('/api/ais-refresh', { method: 'POST' }).catch(function(){});
+          }
+        });
+      }, 30000);
     }
 
     // ?? FX ??????????????????????????????????????????????????
@@ -131,8 +144,17 @@
       updateFXDisplay();
     }
 
-    // Re-fetch every 5 minutes
+    // Re-fetch full data every 5 minutes
     setTimeout(fetchLiveData, 5 * 60 * 1000);
+
+    // Also refresh tankers independently every 3 minutes
+    // (ships move, AIS updates frequently)
+    setTimeout(function refreshTankers() {
+      CrudeAPI.fetchCachedTankers().then(function(t) {
+        if (t && t.length > 0) applyLiveTankers(t);
+      });
+      setTimeout(refreshTankers, 3 * 60 * 1000);
+    }, 3 * 60 * 1000);
   }
 
   // ?? APPLY LIVE TANKERS ???????????????????????????????????
