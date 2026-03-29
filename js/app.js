@@ -121,21 +121,23 @@
     // ?? Tankers (from AISstream Blob) ???????????????????????
     if (tankersResult.status === 'fulfilled' && Array.isArray(tankersResult.value) && tankersResult.value.length > 0) {
       applyLiveTankers(tankersResult.value);
+      // If blob data is older than 30 min, quietly trigger a fresh AIS collection
+      var blobAge = tankersResult.value._blobAgeMs || 0;
+      if (blobAge > 30 * 60 * 1000) {
+        console.log('[CrudeRadar] AIS data stale (>30 min) -- triggering background refresh');
+        fetch('/api/ais-refresh', { method: 'POST' }).catch(function(){});
+      }
     } else {
-      // No tankers yet -- blob may be empty on cold start, retry in 30s
+      // Empty blob -- trigger AIS refresh and retry after 60s
       setStatusBadge('api-status-tankers', 'demo', 'AIS LOADING...');
-      console.log('[CrudeRadar] No tankers on first fetch -- retrying in 30s');
+      console.log('[CrudeRadar] No tankers -- triggering AIS refresh, retrying in 60s');
+      fetch('/api/ais-refresh', { method: 'POST' }).catch(function(){});
       setTimeout(function() {
         CrudeAPI.fetchCachedTankers().then(function(t) {
-          if (t && t.length > 0) {
-            applyLiveTankers(t);
-          } else {
-            setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
-            // Trigger AIS refresh if still empty
-            fetch('/api/ais-refresh', { method: 'POST' }).catch(function(){});
-          }
+          if (t && t.length > 0) applyLiveTankers(t);
+          else setStatusBadge('api-status-tankers', 'demo', 'AIS DEMO');
         });
-      }, 30000);
+      }, 60000);
     }
 
     // ?? FX ??????????????????????????????????????????????????
@@ -147,14 +149,13 @@
     // Re-fetch full data every 5 minutes
     setTimeout(fetchLiveData, 5 * 60 * 1000);
 
-    // Also refresh tankers independently every 3 minutes
-    // (ships move, AIS updates frequently)
+    // Refresh tankers every 60 seconds so map and table stay current
     setTimeout(function refreshTankers() {
       CrudeAPI.fetchCachedTankers().then(function(t) {
         if (t && t.length > 0) applyLiveTankers(t);
       });
-      setTimeout(refreshTankers, 3 * 60 * 1000);
-    }, 3 * 60 * 1000);
+      setTimeout(refreshTankers, 60 * 1000);
+    }, 60 * 1000);
   }
 
   // ?? APPLY LIVE TANKERS ???????????????????????????????????
@@ -184,6 +185,9 @@
     const liveTankers  = normalised.filter(t => !t.stale);
     const staleTankers = normalised.filter(t => t.stale);
 
+    // Carry over metadata from the raw array
+    normalised._fetchedAt = tankers._fetchedAt || null;
+    normalised._blobAgeMs = tankers._blobAgeMs || 0;
     CrudeRadar.tankers = normalised;
     renderTankersTable(normalised);
     updateTankerStats(normalised, liveTankers.length);
@@ -226,6 +230,25 @@
 
     renderMapMode('tankers');
     updateMapLegend('tankers');
+  }
+
+  // Render production on map -- safe to call any time
+  // Production data is static so always available immediately
+  function renderProductionOnMap() {
+    if (!state.map && window._crudeMap) state.map = window._crudeMap;
+    if (!state.map) {
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        if (state.map) { clearInterval(timer); renderProductionOnMap(); }
+        else if (attempts > 20) { clearInterval(timer); }
+      }, 500);
+      return;
+    }
+    var mode = state.mapMode || 'tankers';
+    if (mode !== 'production') return;
+    renderMapMode('production');
+    updateMapLegend('production');
   }
 
   // ?? TANKER STATS ?????????????????????????????????????????
@@ -905,6 +928,12 @@
     // Update row count badge if element exists
     const countEl = document.getElementById('tankers-count');
     if (countEl) countEl.textContent = (tankers || []).length + ' vessels';
+    // Show last updated time
+    const updEl = document.getElementById('tankers-updated');
+    if (updEl && tankers && tankers._fetchedAt) {
+      var ago = Math.round((Date.now() - new Date(tankers._fetchedAt).getTime()) / 60000);
+      updEl.textContent = ago < 2 ? 'Updated just now' : 'Updated ' + ago + ' min ago';
+    }
 
     tbody.innerHTML = (tankers || []).map(t => {
       const lat    = parseFloat(t.lat || 0);
@@ -1046,11 +1075,11 @@
         fillOpacity: 0.85,
       });
 
-      // Permanent label showing the barrel icon character + production
+      // Label: small text div centered on the circle
       var label = L.divIcon({
-        html: '<div style="font-size:13px;line-height:1;text-shadow:0 0 4px #000,0 0 4px #000">&#x1F6E2;</div>',
-        iconSize:   [16, 16],
-        iconAnchor: [8, 8],
+        html: '<div style="width:' + size*2 + 'px;height:' + size*2 + 'px;display:flex;align-items:center;justify-content:center;font-size:' + Math.round(size*0.7) + 'px;text-shadow:0 0 3px #000,0 0 3px #000;pointer-events:none">&#x1F6E2;</div>',
+        iconSize:   [size*2, size*2],
+        iconAnchor: [size, size],
         className:  '',
       });
       var labelMarker = L.marker(ll, { icon: label, interactive: false, zIndexOffset: -100 });
@@ -1198,6 +1227,18 @@
     if (page === 'country') initCountryPage();
     if (page === 'news')    initNewsFilters();
     if (page === 'dashboard' && state.map) setTimeout(() => state.map.invalidateSize(), 100);
+    // When user opens the Tankers page, refresh data and re-render table immediately
+    if (page === 'tankers') {
+      // Re-render with current in-memory data right away
+      if (CrudeRadar.tankers.length > 0) {
+        renderTankersTable(CrudeRadar.tankers);
+        updateTankerStats(CrudeRadar.tankers, CrudeRadar.tankers.filter(function(t){ return !t.stale; }).length);
+      }
+      // Then fetch fresh from blob
+      CrudeAPI.fetchCachedTankers().then(function(t) {
+        if (t && t.length > 0) applyLiveTankers(t);
+      });
+    }
   }
 
   function initEIACharts() {
