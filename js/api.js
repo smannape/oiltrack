@@ -1,5 +1,5 @@
 // ============================================================
-// CRUDE RADAR — js/api.js  v3
+// CRUDE RADAR -- js/api.js  v3
 // ============================================================
 
 window.CrudeAPI = (function () {
@@ -11,7 +11,7 @@ window.CrudeAPI = (function () {
       const res = await fetch(path, { signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) throw new Error('Not JSON — got HTML page');
+      if (!ct.includes('application/json')) throw new Error('Not JSON -- got HTML page');
       const data = await res.json();
       if (data?.status === 'error' || data?.status === 'initializing') return null;
       return data;
@@ -27,7 +27,7 @@ window.CrudeAPI = (function () {
     const data = await getBlob('/api/oil-prices');
     if (data) {
       const keys = Object.keys(data.prices || {});
-      console.log(`[CrudeAPI] prices blob: ${keys.length} contracts — ${keys.join(', ')}`);
+      console.log(`[CrudeAPI] prices blob: ${keys.length} contracts -- ${keys.join(', ')}`);
       console.log(`[CrudeAPI] WTI from blob: $${data.prices?.wti?.latest?.price}`);
     }
     return data;
@@ -39,7 +39,19 @@ window.CrudeAPI = (function () {
 
   async function fetchCachedTankers() {
     const data = await getBlob('/api/oil-tankers');
-    return data?.tankers?.length ? data.tankers : null;
+    if (!data?.tankers?.length) return null;
+    const ageMs = data.fetchedAt
+      ? Date.now() - new Date(data.fetchedAt).getTime()
+      : 0;
+    const isStale = ageMs > 3 * 60 * 60 * 1000; // 3 hours
+    // Attach metadata to array so app.js can check staleness
+    const tankers = data.tankers.map(function(t) {
+      return Object.assign({}, t, { stale: isStale || t.stale || false });
+    });
+    tankers._fetchedAt  = data.fetchedAt;
+    tankers._blobAgeMs  = ageMs;
+    tankers._liveCount  = data.live_count || tankers.length;
+    return tankers;
   }
 
   async function triggerRefresh() {
@@ -71,8 +83,8 @@ window.CrudeAPI = (function () {
    *
    * Blob shape (written by background function):
    *   { fetchedAt, prices: {
-   *       wti, brent, dubai, crude_ng, hho, rbob,   ← OilPriceAPI live
-   *       opec, urals, wcs, lco, bonny, espo         ← derived server-side
+   *       wti, brent, dubai, crude_ng, hho, rbob,   <- OilPriceAPI live
+   *       opec, urals, wcs, lco, bonny, espo         <- derived server-side
    *   }}
    *
    * Each entry: { latest:{price,timestamp}, history:[{period,value}], change, changePct }
@@ -108,9 +120,9 @@ window.CrudeAPI = (function () {
       wti:     extract('wti'),
       brent:   extract('brent'),
       dubai:   extract('dubai'),
-      natgas:  extract('crude_ng'),   // blob key crude_ng → app key natgas
+      natgas:  extract('crude_ng'),   // blob key crude_ng -> app key natgas
       rbob:    extract('rbob'),
-      heatoil: extract('hho'),        // blob key hho → app key heatoil
+      heatoil: extract('hho'),        // blob key hho -> app key heatoil
       // ── Derived server-side from benchmarks ───────────────
       opec:    extract('opec'),
       urals:   extract('urals'),
@@ -121,7 +133,7 @@ window.CrudeAPI = (function () {
     };
 
     const found = Object.entries(result).filter(([,v]) => v !== null).map(([k]) => k);
-    console.log(`[CrudeAPI] parsePriceCache: ${found.length} contracts parsed — ${found.join(', ')}`);
+    console.log(`[CrudeAPI] parsePriceCache: ${found.length} contracts parsed -- ${found.join(', ')}`);
 
     return found.length > 0 ? result : null;
   }
