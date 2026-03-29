@@ -27,26 +27,43 @@ const AIS_KEY = process.env.AISSTREAM_API_KEY || '';
 
 //  COLLECTION WINDOW 
 // 45 seconds to collect as many vessel positions as possible
-// 30s collection -- background functions can run longer but 30s gives
-// plenty of AIS messages while keeping response times reasonable
-const COLLECTION_MS = 30000;
-// Max tankers to store in blob (keep payload manageable)
-const MAX_TANKERS   = 60;
+// 45s collection window -- background functions can run up to 15 min
+// 45s gives enough time to collect ME/Asia vessels which need more messages
+const COLLECTION_MS = 45000;
+// Max tankers to store in blob
+const MAX_TANKERS = 100;
 
 //  BOUNDING BOXES  major oil shipping lanes 
+// AISstream accepts multiple boxes - we cast a wide net across all key oil routes
 const BOUNDING_BOXES = [
-  [[21.0, 50.0], [30.0, 60.0]],     // Persian Gulf + Strait of Hormuz
-  [[10.0, 40.0], [25.0, 55.0]],     // Red Sea + Gulf of Aden
+  // ── Middle East ─────────────────────────────────────────────
+  [[21.0, 48.0], [30.0, 60.0]],     // Persian Gulf + Strait of Hormuz (wider)
+  [[22.0, 55.0], [26.0, 60.5]],     // Strait of Hormuz chokepoint (extra dense)
+  [[10.0, 40.0], [25.0, 58.0]],     // Red Sea + Gulf of Aden + Gulf of Oman
+  [[ 8.0, 44.0], [16.0, 52.0]],     // Gulf of Aden approach
+  [[10.0, 55.0], [25.0, 75.0]],     // Arabian Sea (tankers exiting Hormuz to Asia)
+  // ── Indian Ocean / South Asia ───────────────────────────────
+  [[-5.0, 68.0], [15.0, 90.0]],     // Indian Ocean main transit lane
+  [[ 5.0, 78.0], [15.0, 92.0]],     // Bay of Bengal / Sri Lanka
+  // ── Southeast Asia ──────────────────────────────────────────
+  [[-5.0, 95.0], [10.0, 116.0]],    // Strait of Malacca (wider)
+  [[ 0.0, 104.0],[10.0, 115.0]],    // Singapore Strait (dense traffic)
+  [[ 5.0, 105.0],[22.0, 122.0]],    // South China Sea
+  // ── East Asia ───────────────────────────────────────────────
+  [[20.0, 118.0],[35.0, 130.0]],    // Taiwan Strait + East China Sea
+  [[30.0, 118.0],[42.0, 132.0]],    // Yellow Sea / Korea Strait / Japan
+  // ── Europe & Atlantic ───────────────────────────────────────
   [[30.0, -10.0], [46.0, 40.0]],    // Mediterranean Sea
   [[49.0, -15.0], [62.0, 10.0]],    // North Sea + English Channel
-  [[20.0, -100.0], [32.0, -80.0]],  // Gulf of Mexico
-  [[-5.0, 95.0], [10.0, 115.0]],    // Strait of Malacca
-  [[-40.0, 10.0], [5.0, 40.0]],     // South Atlantic / Cape of Good Hope
-  [[30.0, 118.0], [42.0, 132.0]],   // East China Sea / Korea Strait
+  // ── Americas ────────────────────────────────────────────────
+  [[20.0, -100.0],[32.0, -80.0]],   // Gulf of Mexico
+  // ── Africa ──────────────────────────────────────────────────
+  [[-40.0, 10.0], [ 5.0, 40.0]],    // Cape of Good Hope / South Atlantic
 ];
 
 //  TANKER AIS TYPE CODES 
-// 80-89 = Tanker, 70-79 = Cargo (also useful)
+// 80-89 = Tanker (all subtypes)
+// Keep strict to tanker range only -- cargo/other filtered out
 const TANKER_TYPES = new Set([80,81,82,83,84,85,86,87,88,89]);
 
 //  NAVIGATIONAL STATUS 
@@ -70,12 +87,40 @@ function tankerClass(dimA, dimB) {
 function flagFromMMSI(mmsi) {
   const prefix = String(mmsi).slice(0, 3);
   const flags = {
-    '235':'GB','211':'DE','229':'GR','248':'MT','249':'MT',
+    // Europe
+    '211':'DE','229':'GR','235':'GB','244':'NL','245':'NL',
+    '248':'MT','249':'MT','255':'PT','257':'NO','258':'NO',
+    '265':'SE','266':'SE','269':'CH',
+    // Americas
     '310':'BM','311':'BS','319':'KY','338':'US','357':'PA',
     '370':'PA','371':'PA','372':'PA','373':'PA','374':'PA',
-    '416':'TW','431':'JP','440':'KR','441':'KR','477':'HK',
-    '518':'CK','525':'ID','538':'MH','548':'PH','563':'SG',
-    '574':'VN','620':'MZ','636':'LR','710':'BR','720':'BO',
+    '710':'BR',
+    // Middle East (key oil producers)
+    '403':'SA', // Saudi Arabia
+    '404':'KW', // Kuwait
+    '405':'IR', // Iran
+    '406':'IQ', // Iraq
+    '408':'AE', // UAE
+    '409':'IL', // Israel
+    '410':'YE', // Yemen
+    '411':'SY', // Syria
+    '412':'QA', // Qatar
+    '413':'QA', // Qatar alt
+    '419':'IN', // India
+    '422':'IR', // Iran alt
+    '434':'OM', // Oman
+    '436':'BH', // Bahrain
+    // Asia-Pacific
+    '416':'TW','431':'JP','432':'JP',
+    '440':'KR','441':'KR',
+    '477':'HK',
+    '518':'CK','525':'ID','533':'MY',
+    '538':'MH','548':'PH',
+    '563':'SG','564':'SG',
+    '574':'VN',
+    '477':'HK',
+    '620':'MZ','636':'LR',
+    '412':'CN','413':'CN','414':'CN',
   };
   return flags[prefix] || 'XX';
 }
@@ -184,8 +229,9 @@ export default async function handler(req, context) {
         if (type === 'ShipStaticData') {
           const stat = msg.Message?.ShipStaticData || {};
 
-          // Filter to tankers only
-          if (stat.Type && !TANKER_TYPES.has(stat.Type)) return;
+          // Filter: reject known non-tanker types; keep tankers + unknowns
+          // stat.Type 0 = not available -- keep these as potential tankers
+          if (stat.Type && stat.Type !== 0 && !TANKER_TYPES.has(stat.Type)) return;
 
           if (!vessels.has(mmsi)) {
             vessels.set(mmsi, {
