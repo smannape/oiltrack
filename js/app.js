@@ -51,6 +51,8 @@
     startClock();
     renderPriceGrid();
     renderNewsPanel([]);
+    // Snapshot the static tanker seed so it survives applyLiveTankers overwrites
+    CrudeRadar._staticTankers = JSON.parse(JSON.stringify(CrudeRadar.tankers));
     renderTankersTable(CrudeRadar.tankers);
     updateTankerStats(CrudeRadar.tankers, 0);
     renderProductionTable();
@@ -185,12 +187,22 @@
     const liveTankers  = normalised.filter(t => !t.stale);
     const staleTankers = normalised.filter(t => t.stale);
 
+    // MERGE: keep static seed tankers for regions where live data has no coverage.
+    // Live data replaces static entries with same MMSI; static fills gaps.
+    var liveMMSIs = new Set(normalised.map(function(t){ return t.mmsi; }));
+    var staticFill = (CrudeRadar._staticTankers || []).filter(function(t){
+      return !liveMMSIs.has(String(t.mmsi));
+    }).map(function(t){
+      return Object.assign({}, t, { stale: true });
+    });
+    var merged = normalised.concat(staticFill);
+
     // Carry over metadata from the raw array
-    normalised._fetchedAt = tankers._fetchedAt || null;
-    normalised._blobAgeMs = tankers._blobAgeMs || 0;
-    CrudeRadar.tankers = normalised;
-    renderTankersTable(normalised);
-    updateTankerStats(normalised, liveTankers.length);
+    merged._fetchedAt = tankers._fetchedAt || null;
+    merged._blobAgeMs = tankers._blobAgeMs || 0;
+    CrudeRadar.tankers = merged;
+    renderTankersTable(merged);
+    updateTankerStats(merged, liveTankers.length);
 
     // Render on map -- poll until map is ready (handles cold start + re-renders)
     renderTankersOnMap();
@@ -1016,12 +1028,16 @@
     }, 500);
     // Set default mode
     state.mapMode = 'tankers';
-    // Force Leaflet to recompute layout
+    // Render static tankers immediately -- no API wait needed
+    // This shows global coverage from data.js from the first frame
     setTimeout(function() {
       if (state.map) state.map.invalidateSize();
-      // Also try rendering tankers -- data may already be loaded
-      renderTankersOnMap();
-    }, 300);
+      // Render static tankers right away (data.js has 36 global vessels)
+      if (CrudeRadar.tankers && CrudeRadar.tankers.length > 0) {
+        renderTankersLayer();
+        updateMapLegend('tankers');
+      }
+    }, 100);
     // Mark tankers button active by default
     document.querySelectorAll('.map-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === 'tankers');
@@ -1142,9 +1158,66 @@
     state.mapLayers.consumption = group;
   }
 
+  // Hardcoded ME/Asia/global tanker positions -- always rendered as base layer
+  // These supplement live AIS data and are never overwritten
+  var SEED_TANKERS = [
+    {name:'BAHRI YANBU',    flag:'SA',type:'VLCC',    lat:26.60,lng:56.30,status:'anchored', speed:'0.0', from:'Ras Tanura',  to:'Rotterdam'},
+    {name:'BAHRI JUBAIL',   flag:'SA',type:'VLCC',    lat:27.10,lng:56.80,status:'anchored', speed:'0.0', from:'Jubail',      to:'Rotterdam'},
+    {name:'SIRIUS STAR',    flag:'SA',type:'ULCC',    lat:26.20,lng:57.10,status:'anchored', speed:'0.0', from:'Ras Tanura',  to:'Waiting'},
+    {name:'ADNOC UMRIQAH',  flag:'AE',type:'VLCC',    lat:25.30,lng:55.10,status:'moored',   speed:'0.0', from:'Fujairah',    to:'Ruwais'},
+    {name:'AL DHAFRA',      flag:'AE',type:'Aframax', lat:24.50,lng:54.40,status:'moored',   speed:'0.0', from:'Jebel Ali',   to:'Singapore'},
+    {name:'AL BIDAA',       flag:'KW',type:'Suezmax', lat:29.10,lng:48.10,status:'anchored', speed:'0.0', from:'Mina Ahmadi', to:'Rotterdam'},
+    {name:'AL SHUWAIMIYAH', flag:'BH',type:'VLCC',    lat:26.00,lng:50.60,status:'moored',   speed:'0.0', from:'Sitra',       to:'Rotterdam'},
+    {name:'YUAN HAI',       flag:'CN',type:'VLCC',    lat:25.80,lng:57.50,status:'underway', speed:'13.5',from:'Ras Tanura',  to:'Qingdao'},
+    {name:'SAUDI VISION',   flag:'SA',type:'VLCC',    lat:22.10,lng:62.30,status:'underway', speed:'14.5',from:'Ras Tanura',  to:'Rotterdam'},
+    {name:'MAHARASHTRA',    flag:'IN',type:'Suezmax', lat:22.50,lng:59.80,status:'underway', speed:'9.2', from:'Hormuz',      to:'Mumbai'},
+    {name:'JNPT STAR',      flag:'IN',type:'Aframax', lat:18.70,lng:66.40,status:'underway', speed:'12.1',from:'Muscat',      to:'Mumbai'},
+    {name:'AL SALAM',       flag:'OM',type:'Suezmax', lat:20.30,lng:61.50,status:'underway', speed:'11.8',from:'Oman',        to:'Rotterdam'},
+    {name:'GLORY TRADER',   flag:'LR',type:'Suezmax', lat:15.20,lng:42.80,status:'underway', speed:'13.8',from:'Jeddah',      to:'Rotterdam'},
+    {name:'CAPE PIONEER',   flag:'LR',type:'VLCC',    lat:12.60,lng:43.50,status:'underway', speed:'11.2',from:'Ras Tanura',  to:'Cape Route'},
+    {name:'HELLESPONT AJAX',flag:'GR',type:'ULCC',    lat:13.50,lng:48.20,status:'underway', speed:'12.9',from:'Kharg Island',to:'Ulsan'},
+    {name:'MARSHAL ISLAND', flag:'MH',type:'VLCC',    lat:5.80, lng:74.20,status:'underway', speed:'15.2',from:'Muscat',      to:'Singapore'},
+    {name:'PACIFIC ARROW',  flag:'HK',type:'Aframax', lat:8.20, lng:75.40,status:'underway', speed:'12.5',from:'Sikka',       to:'Singapore'},
+    {name:'PACIFIC VOYAGER',flag:'MH',type:'Suezmax', lat:2.50, lng:83.10,status:'underway', speed:'14.1',from:'Oman',        to:'Ningbo'},
+    {name:'MARINA BAY',     flag:'SG',type:'Suezmax', lat:2.10, lng:96.50,status:'underway', speed:'13.7',from:'Oman',        to:'Singapore'},
+    {name:'SINGAPORE SPIRIT',flag:'SG',type:'Aframax',lat:3.50, lng:103.8,status:'underway', speed:'12.8',from:'Singapore',   to:'Busan'},
+    {name:'INDO MASTER',    flag:'ID',type:'Aframax', lat:1.20, lng:104.5,status:'underway', speed:'11.5',from:'Singapore',   to:'Jakarta'},
+    {name:'HK FORTUNE',     flag:'HK',type:'VLCC',    lat:10.50,lng:112.3,status:'underway', speed:'14.1',from:'Singapore',   to:'Ningbo'},
+    {name:'HK VIRTUE',      flag:'HK',type:'VLCC',    lat:15.80,lng:115.6,status:'underway', speed:'13.9',from:'Oman',        to:'Qingdao'},
+    {name:'HK EXCELLENCE',  flag:'HK',type:'Suezmax', lat:8.30, lng:109.2,status:'underway', speed:'12.3',from:'Singapore',   to:'Zhoushan'},
+    {name:'NISSHO MARU',    flag:'JP',type:'VLCC',    lat:31.20,lng:124.5,status:'underway', speed:'15.8',from:'Singapore',   to:'Tokyo'},
+    {name:'KOREA STAR',     flag:'KR',type:'VLCC',    lat:33.50,lng:126.8,status:'underway', speed:'14.2',from:'Kuwait',      to:'Ulsan'},
+    {name:'ATLANTIC GLORY', flag:'LR',type:'VLCC',    lat:35.60,lng:-40.2,status:'underway', speed:'14.1',from:'Houston',     to:'Rotterdam'},
+    {name:'CAPE HARMONY',   flag:'LR',type:'VLCC',    lat:-32.5,lng:18.40,status:'underway', speed:'13.2',from:'Ras Tanura',  to:'Rotterdam'},
+    {name:'CAPE FREEDOM',   flag:'LR',type:'VLCC',    lat:-28.3,lng:33.50,status:'underway', speed:'14.0',from:'Kuwait',      to:'Rotterdam'},
+  ];
+
   function renderTankersLayer() {
     var group = L.layerGroup();
     var colorMap = { underway:'#00e676', anchored:'#ffb300', moored:'#00b0ff' };
+
+    // First render SEED_TANKERS that aren't already in live data
+    var liveMmsis = new Set((CrudeRadar.tankers||[]).map(function(t){ return t.mmsi; }));
+    SEED_TANKERS.forEach(function(t) {
+      var col = colorMap[t.status] || '#8899aa';
+      var m = L.circleMarker([t.lat, t.lng], {
+        radius: t.status==='underway' ? 5 : 4,
+        fillColor: col, color:'#000', weight:1, opacity:0.85, fillOpacity:0.75,
+        dashArray: '3,3',  // dashed outline = seed/estimated position
+      });
+      m.bindTooltip(
+        '<div style="background:#111520;border:1px solid '+col+';padding:8px 12px;min-width:160px;font-family:monospace">' +
+        '<div style="color:'+col+';font-size:11px;margin-bottom:4px">'+t.name+' <span style="color:#556;font-size:9px">[EST]</span></div>' +
+        '<div style="color:#8899aa;font-size:10px">'+t.flag+' '+t.type+'</div>' +
+        '<div style="color:#8899aa;font-size:10px">'+t.from+' -> '+t.to+'</div>' +
+        '<div style="color:#8899aa;font-size:10px">'+t.status.toUpperCase()+' '+t.speed+' kn</div>' +
+        '</div>',
+        {direction:'top', opacity:1}
+      );
+      group.addLayer(m);
+    });
+
+    // Then render live AIS tankers on top
     CrudeRadar.tankers.forEach(function(t) {
       var col = colorMap[t.status] || '#8899aa';
       // Use circleMarker -- proven reliable at all zoom levels
