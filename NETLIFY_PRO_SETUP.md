@@ -19,16 +19,11 @@
 │  Execution limit: 15 MINUTES  (Pro plan feature)            │
 │                                                             │
 │  Fetches simultaneously:                                    │
-│  ├── EIA API  → 12 data series (weekly + monthly)           │
-│  │     crude stocks, production, OPEC output, WTI, Brent    │
-│  │     gasoline stocks, distillate, imports, refinery input │
-│  │     Henry Hub gas, non-OPEC production                   │
-│  ├── Alpha Vantage → WTI weekly, Brent weekly, Nat Gas      │
-│  ├── OPEC.org RSS → official press releases                 │
-│  ├── IEA.org RSS → Oil Market Reports                       │
-│  ├── OilPrice.com RSS → industry news                       │
-│  ├── Rigzone RSS → supply/upstream news                     │
-│  ├── Reuters RSS → breaking news filter                     │
+│  ├── Commodity Price API → 5 futures (WTI, Brent, NG, etc) │
+│  ├── EIA API  → 8 data series (weekly + monthly + daily)    │
+│  │     crude stocks, production, WTI, Brent, Henry Hub      │
+│  │     gasoline stocks, distillate, imports                  │
+│  ├── 30 RSS feeds → OilPrice, Rigzone, MEES, Energy Voice  │
 │  └── GNews API → 2 targeted queries (oil + tankers)         │
 │                                                             │
 │  Writes to Netlify Blobs (store: 'crude-radar'):            │
@@ -61,10 +56,10 @@
 │  USER'S BROWSER  (js/app.js + js/api.js)                    │
 │  • Split fetches: /api/oil-prices + /api/oil-news in        │
 │    parallel → smaller payloads, faster dashboard load       │
-│  • Price cards: live WTI, Brent, Nat Gas from AV + EIA      │
+│  • Price cards: live WTI, Brent, Nat Gas from Commodity API │
 │  • EIA inventory widget: weekly draw/build with WoW change  │
 │  • OPEC production from EIA series (authoritative)          │
-│  • News feed: OPEC + IEA official + GNews + 4 RSS sources   │
+│  • News feed: 30 RSS feeds + GNews (deduplicated)           │
 │  • Production/consumption charts: real EIA monthly history  │
 │  • Sidebar: U.S. production, OPEC production, FX rates      │
 └─────────────────────────────────────────────────────────────┘
@@ -78,11 +73,11 @@
 
 | Key | Where to get | Env var name |
 |-----|-------------|-------------|
+| Commodity Price API | https://omkar.cloud → Sign up free (5,000 req/mo) | `COMMODITY_API_KEY` |
 | EIA Open Data | https://www.eia.gov/opendata/register.php | `EIA_API_KEY` |
-| Alpha Vantage | https://www.alphavantage.co/support/#api-key | `ALPHA_VANTAGE_KEY` |
 | GNews | https://gnews.io → Sign up free | `GNEWS_API_KEY` |
 
-RSS feeds (OPEC, IEA, OilPrice, Reuters, Rigzone) require **no keys**.
+RSS feeds (OilPrice, Rigzone, Energy Voice, MEES + 25 more) require **no keys**.
 FX rates (ExchangeRate-API) require **no key**.
 Map (CARTO + OpenStreetMap) require **no key**.
 
@@ -92,8 +87,8 @@ Netlify Dashboard → **Site settings** → **Environment variables** → **Add 
 
 Add all three:
 ```
+COMMODITY_API_KEY  = your_omkarcloud_key_here
 EIA_API_KEY        = eia_your_key_here
-ALPHA_VANTAGE_KEY  = your_av_key_here
 GNEWS_API_KEY      = your_gnews_key_here
 ```
 
@@ -141,9 +136,9 @@ curl https://your-site.netlify.app/api/oil-meta
 
 You should see `"status": "ok"` with `eia_series`, `news_count`, etc.
 
-### Step 5 — Set Browser API Keys (optional, for even fresher prices)
+### Step 5 — Verify Prices
 
-On your live site, click **⚙ API Keys** in the nav bar and enter your Alpha Vantage + GNews keys. These supplement the server-side data with direct browser fetches on each page load.
+Once data is fetched, the dashboard shows 12 contracts: 5 live from Commodity Price API (WTI, Brent, Nat Gas, Heating Oil, RBOB) + 7 derived from benchmarks (Dubai, OPEC Basket, Urals, WCS, Gasoil, Bonny Light, ESPO). EIA daily data provides price history and serves as fallback if the Commodity API is unavailable.
 
 ---
 
@@ -166,7 +161,7 @@ On your live site, click **⚙ API Keys** in the nav bar and enter your Alpha Va
 
 | Feature | How it's used |
 |---------|-------------|
-| **Background Functions (15 min)** | `fetch-oil-data-background.mjs` — fetches all 12 EIA series + 5 RSS feeds + GNews simultaneously without timeout |
+| **Background Functions (15 min)** | `fetch-oil-data-background.mjs` — fetches 5 commodity prices + 8 EIA series + 30 RSS feeds + GNews simultaneously without timeout |
 | **Scheduled Functions** | `scheduled-refresh.mjs` — fires every hour, triggers background function |
 | **Netlify Blobs** | Stores 5 blob keys (latest, prices, news, eia, meta) |
 | **Fine-Grained Caching (SWR)** | `get-oil-data.mjs` — `Netlify-CDN-Cache-Control: durable` with 5-min fresh + 55-min SWR |

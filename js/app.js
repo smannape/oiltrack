@@ -88,7 +88,7 @@
       applyLivePrices(parsedPrices);
       setStatusBadge('api-status-prices', 'live', 'PRICES LIVE');
     } else {
-      console.warn('[CrudeRadar] No live prices. Check OILPRICE_API_KEY + run /api/oil-refresh');
+      console.warn('[CrudeRadar] No live prices. Check COMMODITY_API_KEY + run /api/oil-refresh');
       setStatusBadge('api-status-prices', 'demo', 'PRICES DEMO');
     }
 
@@ -379,7 +379,7 @@
 
     // Map contract IDs (state.contracts[].id) -> parsedPrices keys
     const idToKey = {
-      // Live from OilPriceAPI
+      // Live from Commodity Price API
       wti:      'wti',
       brent:    'brent',
       dubai:    'dubai',
@@ -416,9 +416,9 @@
       console.log(`[CrudeRadar] Applied live prices to ${updated} tiles`);
     }
 
-    // OilPriceAPI history is intraday ticks -- NOT reliable for charts.
+    // Commodity API returns current prices only (no history).
     // Charts always use EIA monthly data (loaded in applyEIACache).
-    // We only use OilPriceAPI for current price tiles, not chart history.
+    // We only use Commodity API for current price tiles, not chart history.
     // Chart rendering happens in applyEIACache after EIA data loads.
   }
 
@@ -450,7 +450,7 @@
       if (el) el.textContent = (eiaData.usProductionLatest.value / 1000).toFixed(1) + ' Mb/d';
     }
 
-    // If OilPriceAPI is not active, use EIA monthly WTI/Brent for price tiles
+    // If Commodity API is not active, use EIA monthly WTI/Brent for price tiles
     if (!state.liveDataActive) {
       if (eiaData.wtiLatest?.value) {
         const c = state.contracts.find(x => x.id === 'wti');
@@ -722,7 +722,7 @@
     if (!newsItems || newsItems.length === 0) {
       el.innerHTML = `<div style="padding:14px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-align:center">
         <div style="margin-bottom:4px">? Loading live news...</div>
-        <div style="font-size:9px;color:var(--text-dim)">Fetched hourly from OPEC . IEA . OilPrice . Rigzone . Platts</div>
+        <div style="font-size:9px;color:var(--text-dim)">Fetched hourly from OPEC . IEA . OilPrice . Rigzone . Energy Voice</div>
       </div>`;
       return;
     }

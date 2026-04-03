@@ -83,8 +83,8 @@ window.CrudeAPI = (function () {
    *
    * Blob shape (written by background function):
    *   { fetchedAt, prices: {
-   *       wti, brent, dubai, crude_ng, hho, rbob,   <- OilPriceAPI live
-   *       opec, urals, wcs, lco, bonny, espo         <- derived server-side
+   *       wti, brent, crude_ng, hho, rbob,           <- Commodity Price API live
+   *       dubai, opec, urals, wcs, lco, bonny, espo   <- derived server-side
    *   }}
    *
    * Each entry: { latest:{price,timestamp}, history:[{period,value}], change, changePct }
@@ -99,7 +99,7 @@ window.CrudeAPI = (function () {
     function extract(id) {
       const entry = p[id];
       if (!entry) return null;
-      // OilPriceAPI: latest.price  |  EIA fallback: latest.value
+      // Commodity API: latest.price  |  EIA fallback: latest.value
       const price = parseFloat(entry.latest?.price ?? entry.latest?.value ?? 0);
       if (!price || isNaN(price) || price <= 0) return null;
       const history = (entry.history || [])
@@ -110,13 +110,13 @@ window.CrudeAPI = (function () {
         change:    entry.change    ?? null,
         changePct: entry.changePct ?? null,
         history,
-        source:    entry.exchange  || 'OilPriceAPI',
+        source:    entry.exchange  || 'CME',
         name:      entry.name      || id,
       };
     }
 
     const result = {
-      // ── Live from OilPriceAPI ──────────────────────────────
+      // ── Live from Commodity Price API ──────────────────────
       wti:     extract('wti'),
       brent:   extract('brent'),
       dubai:   extract('dubai'),

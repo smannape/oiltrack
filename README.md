@@ -4,7 +4,7 @@ Bloomberg Terminal-style global oil dashboard with **real map** (Leaflet + CARTO
 
 ![Bloomberg Terminal Theme](https://img.shields.io/badge/Theme-Bloomberg%20Terminal-orange)
 ![Leaflet](https://img.shields.io/badge/Map-Leaflet%20%2B%20CARTO-green)
-![APIs](https://img.shields.io/badge/APIs-Alpha%20Vantage%20%7C%20EIA%20%7C%20GNews%20%7C%20RSS-blue)
+![APIs](https://img.shields.io/badge/APIs-Commodity%20Price%20%7C%20EIA%20%7C%20GNews%20%7C%20RSS-blue)
 
 ---
 
@@ -24,21 +24,18 @@ Bloomberg Terminal-style global oil dashboard with **real map** (Leaflet + CARTO
 
 | API | Data | Free Tier | Key Required |
 |-----|------|-----------|-------------|
-| **Alpha Vantage** | WTI, Brent, Nat Gas prices | 25 req/day | ✅ Yes (free) |
-| **EIA Open Data** | U.S. crude inventory, production | Unlimited | ✅ Yes (free) |
+| **Commodity Price API** | WTI, Brent, Nat Gas, Heating Oil, RBOB futures | 5,000 req/mo | ✅ Yes (free) |
+| **EIA Open Data** | U.S. crude inventory, production, daily price history | Unlimited | ✅ Yes (free) |
 | **GNews** | Oil & gas news feed | 100 req/day | ✅ Yes (free) |
-| **NewsAPI** | Backup news (dev/localhost only) | 100 req/day | ✅ Yes (free) |
-| **RSS2JSON** | OilPrice.com, Rigzone RSS | 10k req/mo | ❌ No key |
+| **RSS (direct)** | OilPrice.com, Rigzone, Energy Voice + 25 more | Unlimited | ❌ No key |
 | **ExchangeRate-API** | USD FX cross rates | 1,500 req/mo | ❌ No key |
-| **Open-Meteo** | Tanker route weather | Unlimited | ❌ No key |
 | **CARTO + OSM** | Interactive world map | Unlimited | ❌ No key |
 
 ### Get Your Free API Keys
 
-1. **Alpha Vantage**: https://www.alphavantage.co/support/#api-key
+1. **Commodity Price API**: https://omkar.cloud → Create free account (5,000 req/mo)
 2. **EIA**: https://www.eia.gov/opendata/register.php
 3. **GNews**: https://gnews.io/ → Create free account
-4. **NewsAPI**: https://newsapi.org/register (works on localhost/dev)
 
 ### Configure Keys in the App
 
@@ -82,7 +79,7 @@ crude-radar/
 
 | Feature | Status |
 |---------|--------|
-| Live oil contract prices (12 contracts) | ✅ Simulated + Alpha Vantage |
+| Live oil contract prices (12 contracts) | ✅ Commodity Price API + EIA + derived |
 | Breaking news ticker | ✅ Live via GNews/RSS |
 | Leaflet interactive world map | ✅ CARTO dark tiles |
 | Tanker tracking with AIS-style data | ✅ Simulated (MarineTraffic API for real) |

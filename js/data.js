@@ -131,7 +131,7 @@ CrudeRadar.tickerMessages = [
 
 // ── PRICE HISTORY (placeholder -- replaced by live 30d data) ──
 // These flat arrays are what Chart.js reads.
-// applyLivePrices() overwrites them with real OilPriceAPI history.
+// applyLivePrices() overwrites them with real Commodity API / EIA history.
 // Initialised as empty arrays so charts don't throw on first render.
 CrudeRadar.priceHistory = {
   wti:     [],

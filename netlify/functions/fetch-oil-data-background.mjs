@@ -6,14 +6,14 @@
 // Also: POST /api/oil-refresh for manual trigger.
 //
 // Fetches:
-//   1. OilPriceAPI  -- live spot prices + 30-day daily history
+//   1. Commodity Price API (omkarcloud) -- live futures prices
 //   2. EIA Open Data -- 8 series (stocks, production, prices)
 //   3. RSS feeds    -- OilPrice.com, Rigzone, NGI, Offshore Tech
 //   4. GNews        -- oil/energy news (if GNEWS_API_KEY set)
 //   5. Datalastic   -- AIS tanker positions (if DATALASTIC_API_KEY set)
 //
 // Writes Netlify Blobs (store: 'crude-radar'):
-//   prices  -- all 12 contracts (6 live + 6 derived)
+//   prices  -- all 12 contracts (5 live + 7 derived)
 //   news    -- merged deduplicated articles
 //   eia     -- EIA inventory + production series
 //   tankers -- AIS vessel positions
@@ -23,22 +23,23 @@
 import { getStore } from '@netlify/blobs';
 
 // ?? ENV VARS ??????????????????????????????????????????????????
-const OILPRICE_KEY   = process.env.OILPRICE_API_KEY   || '';
-const EIA_KEY        = process.env.EIA_API_KEY         || '';
-const GNEWS_KEY      = process.env.GNEWS_API_KEY       || '';
-const DATALASTIC_KEY = process.env.DATALASTIC_API_KEY  || '';
+const COMMODITY_API_KEY = process.env.COMMODITY_API_KEY || '';
+const EIA_KEY           = process.env.EIA_API_KEY       || '';
+const GNEWS_KEY         = process.env.GNEWS_API_KEY     || '';
+const DATALASTIC_KEY    = process.env.DATALASTIC_API_KEY || '';
 
-// OILPRICE API -- 1 call per day fetches ALL contracts at once
-// Endpoint: /v1/prices/latest (no code filter = returns all available)
-// Saves ~170 calls/month vs the old per-contract approach
-const OILPRICE_CONTRACT_MAP = {
-  WTI_USD:           { id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '??' },
-  BRENT_CRUDE_USD:   { id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '?'  },
-  DUBAI_CRUDE_USD:   { id: 'dubai',    name: 'Dubai Crude',   unit: 'USD/bbl',   exchange: 'DME',   flag: '??' },
-  NATURAL_GAS_USD:   { id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '?'  },
-  HEATING_OIL_USD:   { id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
-  GASOLINE_RBOB_USD: { id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
-};
+// COMMODITY PRICE API (omkarcloud) -- one request per commodity
+// Endpoint: GET https://commodity-price-api.omkar.cloud/commodity-price?name=<name>
+// Header: API-Key: <key>
+// Free tier: 5,000 requests/month
+// Returns: { commodity_name, exchange, price_usd, updated_at }
+const COMMODITY_CONTRACTS = [
+  { apiName: 'crude_oil',      id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   flag: '??' },
+  { apiName: 'brent_crude_oil', id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   flag: '?'  },
+  { apiName: 'natural_gas',    id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', flag: '?'  },
+  { apiName: 'heating_oil',    id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   flag: '?'  },
+  { apiName: 'gasoline_rbob',  id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   flag: '?'  },
+];
 
 // ?? EIA SERIES ????????????????????????????????????????????????
 const EIA_SERIES = [
@@ -47,7 +48,7 @@ const EIA_SERIES = [
   { id: 'PET.WDISTUS1.W',   key: 'us_distillate',       freq: 'weekly',  length: 52  },
   { id: 'PET.WCRRIUS2.W',   key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
   { id: 'PET.MCRFPUS2.M',   key: 'us_field_production', freq: 'monthly', length: 60  },
-  // EIA price series -- free/unlimited, used as price history + OilPriceAPI fallback
+  // EIA price series -- free/unlimited, used as price history + Commodity API fallback
   { id: 'PET.RWTC.D',   key: 'wti_spot_daily',   freq: 'daily', length: 60 },
   { id: 'PET.RBRTE.D',  key: 'brent_spot_daily', freq: 'daily', length: 60 },
   { id: 'NG.RNGWHHD.D', key: 'henry_hub_daily',  freq: 'daily', length: 60 },
@@ -143,62 +144,58 @@ async function fetchText(url, timeoutMs = 15000) {
 }
 
 // ==============================================================
-// OILPRICE API -- single batch call (1 request per day)
+// COMMODITY PRICE API (omkarcloud) -- parallel per-commodity calls
 // ==============================================================
 
-// ONE API call fetches all 6 contracts at once using comma-separated codes.
-// API supports: /v1/prices/latest?by_code=WTI_USD,BRENT_CRUDE_USD,...
-// This uses exactly 1 of the 200 monthly quota per day.
-async function fetchAllOilPrices() {
-  if (!OILPRICE_KEY) return null;
+// Fetches each commodity individually in parallel.
+// 5 contracts × ~5 calls/day = ~750 calls/month (within 5,000 free tier).
+async function fetchSingleCommodity(contract) {
+  const url = `https://commodity-price-api.omkar.cloud/commodity-price?name=${contract.apiName}`;
+  const raw = await fetchJSON(url, 15000, { 'API-Key': COMMODITY_API_KEY });
 
-  const codes = Object.keys(OILPRICE_CONTRACT_MAP).join(',');
-  const url   = 'https://api.oilpriceapi.com/v1/prices/latest?by_code=' + encodeURIComponent(codes);
-  const raw   = await fetchJSON(url, 30000, { 'Authorization': 'Token ' + OILPRICE_KEY });
-
-  if (!raw || raw.status !== 'success') {
-    console.warn('[prices] OilPriceAPI call failed. Status:', raw?.status, 'Error:', raw?.error);
+  if (!raw || !raw.price_usd) {
+    console.warn(`[prices] Commodity API failed for ${contract.apiName}:`, JSON.stringify(raw)?.substring(0, 200));
     return null;
   }
 
-  // API returns array in data.prices when multiple codes requested
-  const items = Array.isArray(raw.data?.prices) ? raw.data.prices
-              : Array.isArray(raw.data)          ? raw.data
-              : raw.data?.price                  ? [raw.data]   // single-code fallback
-              : [];
+  const price = parseFloat(raw.price_usd);
+  if (!price || isNaN(price)) return null;
 
-  if (!items.length) {
-    console.warn('[prices] OilPriceAPI returned empty data:', JSON.stringify(raw).substring(0, 200));
-    return null;
+  return {
+    id:       contract.id,
+    name:     contract.name,
+    unit:     contract.unit,
+    exchange: raw.exchange || 'NYMEX',
+    flag:     contract.flag,
+    latest: {
+      price,
+      timestamp: raw.updated_at || new Date().toISOString(),
+      change:    null,  // API does not provide change data; EIA fallback handles history
+      changePct: null,
+    },
+    change:    null,
+    changePct: null,
+    history:   [],  // EIA daily series provides history
+  };
+}
+
+async function fetchAllCommodityPrices() {
+  if (!COMMODITY_API_KEY) return null;
+
+  const results = await Promise.allSettled(
+    COMMODITY_CONTRACTS.map(c => fetchSingleCommodity(c))
+  );
+
+  const prices = {};
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) {
+      prices[r.value.id] = r.value;
+    }
   }
 
-  const result = {};
-  for (const item of items) {
-    const meta = OILPRICE_CONTRACT_MAP[item.code];
-    if (!meta) continue;
-    const price = parseFloat(item.price ?? item.value ?? 0);
-    if (!price) continue;
-    result[meta.id] = {
-      id:        meta.id,
-      name:      meta.name,
-      unit:      meta.unit,
-      exchange:  meta.exchange,
-      flag:      meta.flag,
-      latest: {
-        price,
-        timestamp: item.created_at || item.timestamp || new Date().toISOString(),
-        change:    item.changes?.['24h']?.amount  ?? item.change    ?? null,
-        changePct: item.changes?.['24h']?.percent ?? item.changePct ?? null,
-      },
-      change:    item.changes?.['24h']?.amount  ?? item.change    ?? null,
-      changePct: item.changes?.['24h']?.percent ?? item.changePct ?? null,
-      history:   [],
-    };
-  }
-
-  const found = Object.keys(result);
-  console.log('[prices] OilPriceAPI: ' + found.length + '/6 contracts: ' + found.join(', '));
-  return found.length ? result : null;
+  const found = Object.keys(prices);
+  console.log('[prices] Commodity API: ' + found.length + '/' + COMMODITY_CONTRACTS.length + ' contracts: ' + found.join(', '));
+  return found.length ? prices : null;
 }
 
 // ==============================================================
@@ -375,6 +372,11 @@ function buildDerivedPrices(prices) {
     };
   }
 
+  // Dubai Crude -- historically ~$1-2 below Brent
+  if (!prices.dubai?.latest?.price) {
+    prices.dubai = derived('dubai', 'Dubai Crude',             'USD/bbl', 'DME',  '??', brent, brentHist, -1.50);
+  }
+
   // OPEC Basket -- blended member crudes, historically ~$3 below Brent
   prices.opec  = derived('opec',  'OPEC Basket',             'USD/bbl', 'OPEC', '?',  brent, brentHist, -3.00);
 
@@ -405,7 +407,7 @@ function buildDerivedPrices(prices) {
   // ESPO Blend -- Russian Pacific crude, smaller discount than Urals
   prices.espo  = derived('espo',  'ESPO Blend',              'USD/bbl', 'OTC',  '??', brent, brentHist, -4.50);
 
-  const derivedKeys = ['opec','urals','wcs','lco','bonny','espo'];
+  const derivedKeys = ['dubai','opec','urals','wcs','lco','bonny','espo'];
   console.log(`[derived] ${derivedKeys.map(id => `${id}=$${prices[id]?.latest?.price ?? 'MISSING'}`).join(', ')}`);
 }
 
@@ -468,14 +470,12 @@ export default async function handler(req, context) {
   const store  = getStore('crude-radar');
   const errors = [];
 
-  // ?? 1. PRICES (OilPriceAPI) ???????????????????????????????
+  // ?? 1. PRICES (Commodity Price API) ???????????????????????
   const prices = {};
 
-  // Single API call fetches ALL contracts at once.
-  // Guard: max 5 calls per day to stay within 200/month quota.
-  // At hourly schedule: 5 calls/day x 30 days = 150 calls/month (75% of 200 limit).
-  // Calls are spread ~4-5 hours apart throughout the day.
-  const MAX_CALLS_PER_DAY = 5;
+  // Quota guard: max 5 rounds per day to stay within 5,000/month free tier.
+  // 5 contracts × 5 rounds/day × 30 days = 750 calls/month.
+  const MAX_ROUNDS_PER_DAY = 5;
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   let priceMeta = { date: '', count: 0, lastFetchHour: -1 };
   try {
@@ -489,27 +489,25 @@ export default async function handler(req, context) {
   }
 
   const currentHour = new Date().getUTCHours();
-  // Space calls evenly: allow a new call if enough hours have passed since last fetch
-  // With 5 calls over 24 hours, minimum gap = ~4-5 hours
-  const minHourGap = Math.floor(24 / MAX_CALLS_PER_DAY); // = 4 hours
+  const minHourGap = Math.floor(24 / MAX_ROUNDS_PER_DAY); // ~4-5 hours apart
   const hoursSinceLast = priceMeta.lastFetchHour < 0
     ? 999
     : (currentHour - priceMeta.lastFetchHour + 24) % 24;
-  const canFetch = priceMeta.count < MAX_CALLS_PER_DAY && hoursSinceLast >= minHourGap;
+  const canFetch = priceMeta.count < MAX_ROUNDS_PER_DAY && hoursSinceLast >= minHourGap;
 
-  if (!OILPRICE_KEY) {
-    console.warn('[prices] OILPRICE_API_KEY not set -- will use EIA fallback');
-    errors.push('OILPRICE_API_KEY missing');
+  if (!COMMODITY_API_KEY) {
+    console.warn('[prices] COMMODITY_API_KEY not set -- will use EIA fallback');
+    errors.push('COMMODITY_API_KEY missing');
   } else if (!canFetch) {
     // Within quota window -- load cached prices
-    console.log('[prices] Quota guard: ' + priceMeta.count + '/' + MAX_CALLS_PER_DAY + ' calls today, last at hour ' + priceMeta.lastFetchHour + ' UTC. Loading cache.');
+    console.log('[prices] Quota guard: ' + priceMeta.count + '/' + MAX_ROUNDS_PER_DAY + ' rounds today, last at hour ' + priceMeta.lastFetchHour + ' UTC. Loading cache.');
     try {
       const cached = await store.get('prices-cache', { type: 'text' });
       if (cached) Object.assign(prices, JSON.parse(cached));
     } catch {}
   } else {
     // Quota allows -- call API
-    const batch = await fetchAllOilPrices();
+    const batch = await fetchAllCommodityPrices();
     if (batch) {
       Object.assign(prices, batch);
       // Update meta and cache
@@ -517,9 +515,9 @@ export default async function handler(req, context) {
       priceMeta.lastFetchHour = currentHour;
       await store.set('prices-cache', JSON.stringify(batch)).catch(() => {});
       await store.set('prices-meta', JSON.stringify(priceMeta)).catch(() => {});
-      console.log('[prices] Fetched OK. Call ' + priceMeta.count + '/' + MAX_CALLS_PER_DAY + ' today (hour ' + currentHour + ' UTC).');
+      console.log('[prices] Fetched OK. Round ' + priceMeta.count + '/' + MAX_ROUNDS_PER_DAY + ' today (hour ' + currentHour + ' UTC).');
     } else {
-      errors.push('OilPriceAPI batch call failed -- EIA fallback will apply');
+      errors.push('Commodity API fetch failed -- EIA fallback will apply');
       // Load previous cache as fallback
       try {
         const cached = await store.get('prices-cache', { type: 'text' });
@@ -544,9 +542,9 @@ export default async function handler(req, context) {
     }
     console.log(`[eia] Got ${Object.keys(eia).length}/${EIA_SERIES.length} series`);
 
-    // EIA price fallbacks: fire when OilPriceAPI missing OR returned no price
-    // Merge EIA daily prices as history into OilPriceAPI contracts
-    // AND as full fallback if OilPriceAPI failed
+    // EIA price fallbacks: fire when Commodity API missing OR returned no price
+    // Merge EIA daily prices as history into Commodity API contracts
+    // AND as full fallback if Commodity API failed
     if (eia.wti_spot_daily?.series?.length) {
       const hist = [...eia.wti_spot_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
       if (!prices.wti?.latest?.price) {
@@ -591,7 +589,7 @@ export default async function handler(req, context) {
   }
 
   // ?? 3. DERIVED PRICES ?????????????????????????????????????
-  // Must run after both OilPriceAPI and EIA so benchmarks are available
+  // Must run after both Commodity API and EIA so benchmarks are available
   buildDerivedPrices(prices);
 
   const allContracts = Object.values(prices).filter(p => p.latest?.price);
@@ -654,7 +652,7 @@ export default async function handler(req, context) {
     // Only write tankers if we got actual data -- avoid overwriting
     // the AISstream blob that fetch-ais-data.mjs maintains separately.
     const blobWrites = [
-      store.setJSON('prices',  { fetchedAt, prices }),  // includes EIA fallback if OilPriceAPI failed
+      store.setJSON('prices',  { fetchedAt, prices }),  // includes EIA fallback if Commodity API failed
       store.setJSON('news',    { fetchedAt, news }),
       store.setJSON('eia',     { fetchedAt, eia }),
       store.setJSON('meta',    meta),
