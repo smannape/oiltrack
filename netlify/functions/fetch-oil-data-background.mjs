@@ -148,7 +148,8 @@ async function fetchText(url, timeoutMs = 15000) {
 // ==============================================================
 
 // Fetches each commodity individually in parallel.
-// 5 contracts × ~5 calls/day = ~750 calls/month (within 5,000 free tier).
+// Quota: 4 rounds/day × 5 contracts = 20 req/day × 31 days = ~620 req/month.
+// Hard monthly cap: 4,500 requests (500 buffer from 5,000 free tier).
 async function fetchSingleCommodity(contract) {
   const url = `https://commodity-price-api.omkar.cloud/commodity-price?name=${contract.apiName}`;
   const raw = await fetchJSON(url, 15000, { 'API-Key': COMMODITY_API_KEY });
@@ -473,34 +474,70 @@ export default async function handler(req, context) {
   // ?? 1. PRICES (Commodity Price API) ???????????????????????
   const prices = {};
 
-  // Quota guard: max 5 rounds per day to stay within 5,000/month free tier.
-  // 5 contracts × 5 rounds/day × 30 days = 750 calls/month.
-  const MAX_ROUNDS_PER_DAY = 5;
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  let priceMeta = { date: '', count: 0, lastFetchHour: -1 };
+  // ── QUOTA CONFIGURATION ──────────────────────────────────────
+  // Free tier: 5,000 requests/month.
+  // Each round fetches 5 contracts (1 request each) = 5 requests per round.
+  //
+  // HARD MONTHLY CAP: 4,500 requests (900 rounds × 5 contracts)
+  //   → 500 request buffer for retries / manual refreshes / safety
+  //
+  // DAILY LIMIT: 4 rounds/day × 5 contracts = 20 requests/day
+  //   → 4 rounds × 31 days = 124 rounds × 5 = 620 requests/month (typical)
+  //   → Well within the 4,500 hard cap
+  //
+  // HOUR GAP: minimum 6 hours between rounds
+  //   → Spreads fetches across the day (e.g. 00:00, 06:00, 12:00, 18:00 UTC)
+  // ─────────────────────────────────────────────────────────────
+  const CONTRACTS_PER_ROUND  = COMMODITY_CONTRACTS.length;  // 5
+  const MONTHLY_REQUEST_CAP  = 4500;                        // hard cap (5000 - 500 buffer)
+  const MAX_ROUNDS_PER_MONTH = Math.floor(MONTHLY_REQUEST_CAP / CONTRACTS_PER_ROUND); // 900
+  const MAX_ROUNDS_PER_DAY   = 4;
+  const MIN_HOUR_GAP         = 6;
+
+  const now         = new Date();
+  const today       = now.toISOString().slice(0, 10);       // YYYY-MM-DD
+  const thisMonth   = now.toISOString().slice(0, 7);        // YYYY-MM
+  const currentHour = now.getUTCHours();
+
+  // Load quota tracking from blob
+  let priceMeta = { date: '', dayCount: 0, lastFetchHour: -1, month: '', monthRequests: 0 };
   try {
     const meta = await store.get('prices-meta', { type: 'text' });
     if (meta) priceMeta = JSON.parse(meta);
   } catch {}
 
-  // Reset counter if it's a new day
+  // Reset daily counter if it's a new day
   if (priceMeta.date !== today) {
-    priceMeta = { date: today, count: 0, lastFetchHour: -1 };
+    priceMeta.date = today;
+    priceMeta.dayCount = 0;
+    priceMeta.lastFetchHour = -1;
   }
 
-  const currentHour = new Date().getUTCHours();
-  const minHourGap = Math.floor(24 / MAX_ROUNDS_PER_DAY); // ~4-5 hours apart
+  // Reset monthly counter if it's a new month
+  if (priceMeta.month !== thisMonth) {
+    priceMeta.month = thisMonth;
+    priceMeta.monthRequests = 0;
+  }
+
   const hoursSinceLast = priceMeta.lastFetchHour < 0
     ? 999
     : (currentHour - priceMeta.lastFetchHour + 24) % 24;
-  const canFetch = priceMeta.count < MAX_ROUNDS_PER_DAY && hoursSinceLast >= minHourGap;
+
+  const monthlyBudgetLeft = MONTHLY_REQUEST_CAP - (priceMeta.monthRequests || 0);
+  const canAffordRound    = monthlyBudgetLeft >= CONTRACTS_PER_ROUND;
+  const dailyAllows       = priceMeta.dayCount < MAX_ROUNDS_PER_DAY;
+  const hourGapAllows     = hoursSinceLast >= MIN_HOUR_GAP;
+  const canFetch          = canAffordRound && dailyAllows && hourGapAllows;
 
   if (!COMMODITY_API_KEY) {
     console.warn('[prices] COMMODITY_API_KEY not set -- will use EIA fallback');
     errors.push('COMMODITY_API_KEY missing');
   } else if (!canFetch) {
-    // Within quota window -- load cached prices
-    console.log('[prices] Quota guard: ' + priceMeta.count + '/' + MAX_ROUNDS_PER_DAY + ' rounds today, last at hour ' + priceMeta.lastFetchHour + ' UTC. Loading cache.');
+    // Quota guard -- load cached prices instead
+    const reason = !canAffordRound ? `monthly cap reached (${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} requests)`
+                 : !dailyAllows    ? `daily limit (${priceMeta.dayCount}/${MAX_ROUNDS_PER_DAY} rounds)`
+                 :                   `hour gap (${hoursSinceLast}h < ${MIN_HOUR_GAP}h, last at hour ${priceMeta.lastFetchHour} UTC)`;
+    console.log(`[prices] Quota guard: ${reason}. Month: ${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} reqs. Loading cache.`);
     try {
       const cached = await store.get('prices-cache', { type: 'text' });
       if (cached) Object.assign(prices, JSON.parse(cached));
@@ -508,14 +545,11 @@ export default async function handler(req, context) {
   } else {
     // Quota allows -- call API
     const batch = await fetchAllCommodityPrices();
+    // Count requests sent (even if some failed -- they consume API quota)
+    const requestsSent = CONTRACTS_PER_ROUND;
     if (batch) {
       Object.assign(prices, batch);
-      // Update meta and cache
-      priceMeta.count++;
-      priceMeta.lastFetchHour = currentHour;
-      await store.set('prices-cache', JSON.stringify(batch)).catch(() => {});
-      await store.set('prices-meta', JSON.stringify(priceMeta)).catch(() => {});
-      console.log('[prices] Fetched OK. Round ' + priceMeta.count + '/' + MAX_ROUNDS_PER_DAY + ' today (hour ' + currentHour + ' UTC).');
+      console.log(`[prices] Fetched OK. Round ${priceMeta.dayCount + 1}/${MAX_ROUNDS_PER_DAY} today.`);
     } else {
       errors.push('Commodity API fetch failed -- EIA fallback will apply');
       // Load previous cache as fallback
@@ -524,6 +558,13 @@ export default async function handler(req, context) {
         if (cached) { Object.assign(prices, JSON.parse(cached)); console.log('[prices] Using cached prices from previous fetch'); }
       } catch {}
     }
+    // Always update counters (requests were sent regardless of success)
+    priceMeta.dayCount++;
+    priceMeta.lastFetchHour = currentHour;
+    priceMeta.monthRequests = (priceMeta.monthRequests || 0) + requestsSent;
+    if (batch) await store.set('prices-cache', JSON.stringify(batch)).catch(() => {});
+    await store.set('prices-meta', JSON.stringify(priceMeta)).catch(() => {});
+    console.log(`[prices] Month: ${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} requests (${(priceMeta.monthRequests / MONTHLY_REQUEST_CAP * 100).toFixed(1)}% used).`);
   }
 
   // ?? 2. EIA DATA ???????????????????????????????????????????
