@@ -111,9 +111,17 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'Accept': 'application/json', ...headers },
       });
-      // Don't retry 404s -- resource doesn't exist
+      // Don't retry on these -- resource doesn't exist or auth/rate-limit issue
       if (res.status === 404) {
         console.warn(`[fetchJSON] 404 (no retry): ${url.slice(0, 90)}`);
+        return null;
+      }
+      if (res.status === 401 || res.status === 403) {
+        console.warn(`[fetchJSON] ${res.status} auth error (no retry): ${url.slice(0, 90)}`);
+        return null;
+      }
+      if (res.status === 429) {
+        console.warn(`[fetchJSON] 429 rate limited (no retry): ${url.slice(0, 90)}`);
         return null;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -152,7 +160,8 @@ async function fetchText(url, timeoutMs = 15000) {
 // Hard monthly cap: 4,500 requests (500 buffer from 5,000 free tier).
 async function fetchSingleCommodity(contract) {
   const url = `https://commodity-price-api.omkar.cloud/commodity-price?name=${contract.apiName}`;
-  const raw = await fetchJSON(url, 15000, { 'API-Key': COMMODITY_API_KEY });
+  // retries=1: no retries to keep API call count predictable (1 request per contract)
+  const raw = await fetchJSON(url, 15000, { 'API-Key': COMMODITY_API_KEY }, 1);
 
   if (!raw || !raw.price_usd) {
     console.warn(`[prices] Commodity API failed for ${contract.apiName}:`, JSON.stringify(raw)?.substring(0, 200));
@@ -586,47 +595,45 @@ export default async function handler(req, context) {
     // EIA price fallbacks: fire when Commodity API missing OR returned no price
     // Merge EIA daily prices as history into Commodity API contracts
     // AND as full fallback if Commodity API failed
-    if (eia.wti_spot_daily?.series?.length) {
-      const hist = [...eia.wti_spot_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
-      if (!prices.wti?.latest?.price) {
-        prices.wti = {
-          id: 'wti', name: 'WTI Crude', unit: 'USD/bbl', exchange: 'EIA/NYMEX', flag: '??',
-          latest: { price: eia.wti_spot_daily.latest.value, timestamp: eia.wti_spot_daily.latest.period },
-          change: eia.wti_spot_daily.latest.change, changePct: eia.wti_spot_daily.latest.changePct,
-          history: hist,
+    // Helper: merge EIA daily data into a price entry
+    // - If Commodity API succeeded: attach history + compute change from EIA
+    // - If Commodity API failed: build full price entry from EIA as fallback
+    function mergeEIA(priceKey, eiaKey, fallbackMeta) {
+      const eiaEntry = eia[eiaKey];
+      if (!eiaEntry?.series?.length) return;
+      const hist = [...eiaEntry.series].reverse().map(d => ({ period: d.period, value: d.value }));
+      const eiaChange    = eiaEntry.latest.change;
+      const eiaChangePct = eiaEntry.latest.changePct;
+
+      if (!prices[priceKey]?.latest?.price) {
+        // Full EIA fallback -- Commodity API didn't return this contract
+        prices[priceKey] = {
+          ...fallbackMeta,
+          latest:    { price: eiaEntry.latest.value, timestamp: eiaEntry.latest.period },
+          change:    eiaChange,
+          changePct: eiaChangePct,
+          history:   hist,
         };
-        console.log('[prices] WTI from EIA fallback: $' + eia.wti_spot_daily.latest.value);
+        console.log(`[prices] ${priceKey} from EIA fallback: $${eiaEntry.latest.value}`);
       } else {
-        prices.wti.history = hist;  // always use EIA for history (free)
+        // Commodity API has the live price -- enrich with EIA history + change
+        prices[priceKey].history = hist;
+        // Compute change: live price vs previous EIA daily close
+        if (prices[priceKey].change == null && eiaEntry.series.length >= 2) {
+          const livePrice = prices[priceKey].latest.price;
+          const prevClose = eiaEntry.series[1].value; // series[0] = latest, series[1] = previous day
+          prices[priceKey].change    = parseFloat((livePrice - prevClose).toFixed(3));
+          prices[priceKey].changePct = parseFloat(((livePrice - prevClose) / prevClose * 100).toFixed(2));
+          // Also set on the latest object for frontend consistency
+          prices[priceKey].latest.change    = prices[priceKey].change;
+          prices[priceKey].latest.changePct = prices[priceKey].changePct;
+        }
       }
     }
-    if (eia.brent_spot_daily?.series?.length) {
-      const hist = [...eia.brent_spot_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
-      if (!prices.brent?.latest?.price) {
-        prices.brent = {
-          id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'EIA/ICE', flag: '?',
-          latest: { price: eia.brent_spot_daily.latest.value, timestamp: eia.brent_spot_daily.latest.period },
-          change: eia.brent_spot_daily.latest.change, changePct: eia.brent_spot_daily.latest.changePct,
-          history: hist,
-        };
-        console.log('[prices] Brent from EIA fallback: $' + eia.brent_spot_daily.latest.value);
-      } else {
-        prices.brent.history = hist;
-      }
-    }
-    if (eia.henry_hub_daily?.series?.length) {
-      const hist = [...eia.henry_hub_daily.series].reverse().map(d => ({ period: d.period, value: d.value }));
-      if (!prices.crude_ng?.latest?.price) {
-        prices.crude_ng = {
-          id: 'crude_ng', name: 'Natural Gas', unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?',
-          latest: { price: eia.henry_hub_daily.latest.value, timestamp: eia.henry_hub_daily.latest.period },
-          change: eia.henry_hub_daily.latest.change, changePct: eia.henry_hub_daily.latest.changePct,
-          history: hist,
-        };
-      } else {
-        prices.crude_ng.history = hist;
-      }
-    }
+
+    mergeEIA('wti',      'wti_spot_daily',   { id: 'wti',      name: 'WTI Crude',   unit: 'USD/bbl',   exchange: 'EIA/NYMEX', flag: '??' });
+    mergeEIA('brent',    'brent_spot_daily',  { id: 'brent',    name: 'Brent Crude',  unit: 'USD/bbl',   exchange: 'EIA/ICE',   flag: '?'  });
+    mergeEIA('crude_ng', 'henry_hub_daily',   { id: 'crude_ng', name: 'Natural Gas',  unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?'  });
   }
 
   // ?? 3. DERIVED PRICES ?????????????????????????????????????
