@@ -141,12 +141,14 @@ You should see `"status": "ok"` with `eia_series`, `news_count`, etc.
 Once data is fetched, the dashboard shows 12 contracts: 5 live from Commodity Price API (WTI, Brent, Nat Gas, Heating Oil, RBOB) + 7 derived from benchmarks (Dubai, OPEC Basket, Urals, WCS, Gasoil, Bonny Light, ESPO). EIA daily data provides price history and serves as fallback if the Commodity API is unavailable.
 
 **Quota management** (free tier: 5,000 requests/month):
-- 3 layers of protection: monthly hard cap (4,500 reqs) + daily limit (4 rounds) + hour gap (6h)
-- Typical usage: 4 rounds/day × 5 contracts × 31 days = **620 requests/month** (~12% of limit)
+- 3 layers of protection: monthly hard cap (4,500 reqs) + daily limit (24 rounds) + hour gap (1h)
+- Typical usage: 24 rounds/day × 5 contracts × 31 days = **3,720 requests/month** (~74% of limit)
+- Prices update every hour (matching the hourly cron schedule)
 - 500-request buffer reserved for retries and manual refreshes
 - Failed requests are also counted against quota (they consume API calls)
 - Between rounds, cached prices are served from Netlify Blobs
 - Monthly counter resets automatically on the 1st of each month
+- Hard monthly cap stops all fetches if somehow 4,500 requests are exceeded
 
 ---
 

@@ -156,7 +156,7 @@ async function fetchText(url, timeoutMs = 15000) {
 // ==============================================================
 
 // Fetches each commodity individually in parallel.
-// Quota: 4 rounds/day × 5 contracts = 20 req/day × 31 days = ~620 req/month.
+// Quota: 24 rounds/day × 5 contracts = 120 req/day × 31 days = ~3,720 req/month.
 // Hard monthly cap: 4,500 requests (500 buffer from 5,000 free tier).
 async function fetchSingleCommodity(contract) {
   const url = `https://commodity-price-api.omkar.cloud/commodity-price?name=${contract.apiName}`;
@@ -490,18 +490,18 @@ export default async function handler(req, context) {
   // HARD MONTHLY CAP: 4,500 requests (900 rounds × 5 contracts)
   //   → 500 request buffer for retries / manual refreshes / safety
   //
-  // DAILY LIMIT: 4 rounds/day × 5 contracts = 20 requests/day
-  //   → 4 rounds × 31 days = 124 rounds × 5 = 620 requests/month (typical)
+  // DAILY LIMIT: 24 rounds/day (= every hourly cron trigger)
+  //   → 24 rounds × 5 contracts × 31 days = 3,720 requests/month (74%)
   //   → Well within the 4,500 hard cap
   //
-  // HOUR GAP: minimum 6 hours between rounds
-  //   → Spreads fetches across the day (e.g. 00:00, 06:00, 12:00, 18:00 UTC)
+  // HOUR GAP: minimum 1 hour between rounds
+  //   → Matches the hourly cron schedule — fetch on every trigger
   // ─────────────────────────────────────────────────────────────
   const CONTRACTS_PER_ROUND  = COMMODITY_CONTRACTS.length;  // 5
   const MONTHLY_REQUEST_CAP  = 4500;                        // hard cap (5000 - 500 buffer)
   const MAX_ROUNDS_PER_MONTH = Math.floor(MONTHLY_REQUEST_CAP / CONTRACTS_PER_ROUND); // 900
-  const MAX_ROUNDS_PER_DAY   = 4;
-  const MIN_HOUR_GAP         = 6;
+  const MAX_ROUNDS_PER_DAY   = 24;
+  const MIN_HOUR_GAP         = 1;
 
   const now         = new Date();
   const today       = now.toISOString().slice(0, 10);       // YYYY-MM-DD
