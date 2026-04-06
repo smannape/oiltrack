@@ -95,6 +95,25 @@ export default async function handler(req, context) {
       ? Math.floor((Date.now() - new Date(data.fetchedAt).getTime()) / 1000)
       : 0;
 
+    // ── Guard: don't cache empty prices at CDN ────────────────
+    // If the blob exists but has no actual price data (e.g. API keys
+    // not configured yet), return with short cache so the next fetch
+    // after data is fixed picks up immediately.
+    const hasData = blobKey !== 'prices'
+      || (data.prices && Object.keys(data.prices).length > 0);
+
+    if (!hasData) {
+      return jsonResponse(
+        { status: 'ok', cacheAgeSeconds, empty: true, ...data },
+        200,
+        {
+          'Cache-Control': 'no-cache',
+          'Netlify-CDN-Cache-Control': 'public, max-age=30, stale-while-revalidate=30',
+          'Cache-Tag': `oil-data,oil-${blobKey}`,
+        }
+      );
+    }
+
     // ── Netlify Pro Fine-Grained Caching ─────────────────────
     // CDN edge: fresh for 5 min, SWR up to 55 min (total 1h TTL)
     // Browser: cache 2 min, SWR up to 58 min

@@ -56,7 +56,7 @@
 
 [[redirects]]
   from   = "/api/oil-tankers"
-  to     = "/.netlify/functions/get-oil-data"
+  to     = "/.netlify/functions/get-oil-data?type=tankers"
   status = 200
 
 [[redirects]]

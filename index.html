@@ -156,38 +156,30 @@
     <button onclick="document.getElementById('api-config-panel').style.display='none'" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px">✕</button>
   </div>
   <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
-    Enter your free API keys below to enable live data. All keys are stored only in your browser (localStorage).
+    API keys are configured as environment variables on the server (Netlify).<br>
+    The settings below are for optional browser-side features only.
   </div>
 
-  <div style="margin-bottom:12px">
-    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">ALPHA VANTAGE <span style="color:var(--text-dim)">(Oil prices · Free at alphavantage.co)</span></div>
-    <input id="cfg-av-key" type="text" placeholder="Enter Alpha Vantage API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
+  <div style="margin-bottom:16px;padding:10px;background:rgba(255,176,0,0.08);border:1px solid rgba(255,176,0,0.2);border-radius:3px">
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:6px">SERVER-SIDE KEYS (Netlify Env Vars)</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);line-height:1.7">
+      • <span style="color:var(--text-primary)">COMMODITY_API_KEY</span> — Commodity prices (omkar.cloud)<br>
+      • <span style="color:var(--text-primary)">EIA_API_KEY</span> — EIA inventory + history (eia.gov)<br>
+      • <span style="color:var(--text-primary)">GNEWS_API_KEY</span> — News search (gnews.io)
+    </div>
   </div>
 
-  <div style="margin-bottom:12px">
-    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">EIA OPEN DATA <span style="color:var(--text-dim)">(Inventory · Free at eia.gov/opendata)</span></div>
-    <input id="cfg-eia-key" type="text" placeholder="Enter EIA API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
-  </div>
+  <button onclick="CrudeAPI.triggerRefresh().then(r => { alert(r.triggered ? 'Background refresh started. Data ready in ~60s.' : JSON.stringify(r)); })" style="width:100%;background:var(--accent-orange);border:none;color:#000;font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:2px;padding:10px;border-radius:3px;cursor:pointer;text-transform:uppercase;margin-bottom:12px">TRIGGER DATA REFRESH</button>
 
-  <div style="margin-bottom:12px">
-    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">GNEWS <span style="color:var(--text-dim)">(News · Free at gnews.io)</span></div>
-    <input id="cfg-gnews-key" type="text" placeholder="Enter GNews API key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
-  </div>
-
-  <div style="margin-bottom:16px">
-    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-orange);letter-spacing:1px;margin-bottom:4px">NEWSAPI <span style="color:var(--text-dim)">(News backup · Free at newsapi.org · dev only)</span></div>
-    <input id="cfg-newsapi-key" type="text" placeholder="Enter NewsAPI key" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:7px 10px;border-radius:3px;outline:none">
-  </div>
-
-  <button onclick="saveApiKeys()" style="width:100%;background:var(--accent-orange);border:none;color:#000;font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:2px;padding:10px;border-radius:3px;cursor:pointer;text-transform:uppercase">SAVE & RELOAD DATA</button>
+  <button onclick="location.reload()" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:2px;padding:10px;border-radius:3px;cursor:pointer;text-transform:uppercase">RELOAD DASHBOARD</button>
 
   <div style="margin-top:12px;padding:10px;background:rgba(0,176,255,0.08);border:1px solid rgba(0,176,255,0.2);border-radius:3px">
-    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-blue);letter-spacing:1px;margin-bottom:4px">NOTE: ALWAYS FREE</div>
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--accent-blue);letter-spacing:1px;margin-bottom:4px">ALWAYS FREE (no key needed)</div>
     <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);line-height:1.5">
-      • Map: CARTO + OpenStreetMap (no key)<br>
-      • FX rates: open.er-api.com (no key)<br>
-      • News RSS: rss2json.com (no key)<br>
-      • Weather: Open-Meteo (no key)
+      • Map: CARTO + OpenStreetMap<br>
+      • FX rates: open.er-api.com<br>
+      • 30 RSS news feeds (direct fetch)<br>
+      • EIA fallback for WTI/Brent/NatGas
     </div>
   </div>
 </div>
@@ -1221,44 +1213,10 @@
     e.preventDefault();
     const panel = document.getElementById('api-config-panel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    if (panel.style.display === 'block') loadSavedKeys();
   }
 
-  function loadSavedKeys() {
-    document.getElementById('cfg-av-key').value = localStorage.getItem('cr_av_key') || '';
-    document.getElementById('cfg-eia-key').value = localStorage.getItem('cr_eia_key') || '';
-    document.getElementById('cfg-gnews-key').value = localStorage.getItem('cr_gnews_key') || '';
-    document.getElementById('cfg-newsapi-key').value = localStorage.getItem('cr_newsapi_key') || '';
-  }
-
-  function saveApiKeys() {
-    const av = document.getElementById('cfg-av-key').value.trim();
-    const eia = document.getElementById('cfg-eia-key').value.trim();
-    const gnews = document.getElementById('cfg-gnews-key').value.trim();
-    const newsapi = document.getElementById('cfg-newsapi-key').value.trim();
-    if (av)     { localStorage.setItem('cr_av_key', av); if (CrudeAPI.KEYS) CrudeAPI.KEYS.alphaVantage = av; }
-    if (eia)    { localStorage.setItem('cr_eia_key', eia); if (CrudeAPI.KEYS) CrudeAPI.KEYS.eia = eia; }
-    if (gnews)  { localStorage.setItem('cr_gnews_key', gnews); if (CrudeAPI.KEYS) CrudeAPI.KEYS.gnews = gnews; }
-    if (newsapi){ localStorage.setItem('cr_newsapi_key', newsapi); if (CrudeAPI.KEYS) CrudeAPI.KEYS.newsapi = newsapi; }
-    document.getElementById('api-config-panel').style.display = 'none';
-    // Show feedback
-    const btn = document.querySelector('#api-config-panel button');
-    if (btn) { btn.textContent = 'SAVED! FETCHING LIVE DATA…'; setTimeout(()=>{btn.textContent='SAVE & RELOAD DATA';},3000); }
-  }
-
-  // Load saved keys on startup
-  window.addEventListener('DOMContentLoaded', () => {
-    const av = localStorage.getItem('cr_av_key');
-    const eia = localStorage.getItem('cr_eia_key');
-    const gnews = localStorage.getItem('cr_gnews_key');
-    const newsapi = localStorage.getItem('cr_newsapi_key');
-    if (CrudeAPI.KEYS) {
-      if (av)     CrudeAPI.KEYS.alphaVantage = av;
-      if (eia)    CrudeAPI.KEYS.eia = eia;
-      if (gnews)  CrudeAPI.KEYS.gnews = gnews;
-      if (newsapi)CrudeAPI.KEYS.newsapi = newsapi;
-    }
-  });
+  // Legacy key functions removed — all API keys are now server-side env vars.
+  // Settings panel shows server config info and manual refresh button.
 
   // Populate full news page with static data initially
   document.addEventListener('DOMContentLoaded', () => {
