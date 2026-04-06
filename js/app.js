@@ -433,7 +433,7 @@
           ${(eiaData.stocksLatest / 1000).toFixed(1)}M
         </div>
         <div style="font-family:var(--font-mono);font-size:10px;color:${chg < 0 ? 'var(--accent-green)' : 'var(--accent-red)'};margin-top:3px">
-          ${chg < 0 ? '?' : '?'} ${Math.abs(chg / 1000).toFixed(2)}M bbl week-over-week
+          ${chg < 0 ? '\u25BC' : '\u25B2'} ${Math.abs(chg / 1000).toFixed(2)}M bbl week-over-week
         </div>
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:2px">
           EIA . ${eiaData.stocksPeriod || ''}
@@ -661,16 +661,22 @@
     if (!grid) return;
     grid.innerHTML = state.contracts.map(c => {
       // Use live change from API when available
-      const chg = (c._liveChange !== undefined && c._liveChange !== null)
+      const hasLiveChange = c._liveChange !== undefined && c._liveChange !== null;
+      const hasLivePct    = c._liveChangePct !== undefined && c._liveChangePct !== null;
+      const chg = hasLiveChange
         ? c._liveChange
-        : (c.price - c.prev);
-      const pct = (c._liveChangePct !== undefined && c._liveChangePct !== null)
+        : (c.prev > 0 ? (c.price - c.prev) : 0);  // avoid 100% when prev=0
+      const pct = hasLivePct
         ? Math.abs(c._liveChangePct).toFixed(2)
-        : Math.abs((chg / (c.prev || c.price || 1)) * 100).toFixed(2);
+        : (c.prev > 0 ? Math.abs((chg / c.prev) * 100).toFixed(2) : '0.00');
       const dir   = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
-      const arrow = chg > 0 ? '?' : chg < 0 ? '?' : '--';
+      const arrow = chg > 0 ? '\u25B2' : chg < 0 ? '\u25BC' : '--';
       const priceStr = c.price > 0 ? '$' + c.price.toFixed(2) : '--';
-      const chgStr   = c.price > 0 ? `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)` : 'Loading...';
+      // If no change data and no previous price, show just the price without change
+      const hasChangeData = hasLiveChange || c.prev > 0;
+      const chgStr = c.price <= 0 ? 'Loading...'
+        : !hasChangeData ? '--'
+        : `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)`;
       return `<div class="price-card ${dir}" id="pc-${c.id}">
         <div class="label">${c.flag} ${c.label}</div>
         <div class="name">${c.name}</div>
@@ -694,7 +700,7 @@
         const chg = c.price - c.prev;
         const pct = ((chg / (c.prev || 1)) * 100).toFixed(2);
         const dir   = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
-        const arrow = chg > 0 ? '?' : chg < 0 ? '?' : '--';
+        const arrow = chg > 0 ? '\u25B2' : chg < 0 ? '\u25BC' : '--';
         card.className = 'price-card ' + dir;
         card.querySelector('.price').textContent = '$' + c.price.toFixed(2);
         card.querySelector('.change').textContent = `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)`;
@@ -1510,7 +1516,7 @@
       priceEl.textContent = '$' + data.price.toFixed(2);
       if (data.changePct !== null && data.changePct !== undefined) {
         const up   = data.changePct >= 0;
-        const sign = up ? '? +' : '? ';
+        const sign = up ? '\u25B2 +' : '\u25BC ';
         chgEl.textContent  = `${sign}${data.changePct.toFixed(2)}%`;
         chgEl.style.color  = up ? 'var(--accent-green)' : 'var(--accent-red)';
       }
