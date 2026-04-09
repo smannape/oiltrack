@@ -182,7 +182,9 @@ function collectVessels(boxes, durationMs, vessels) {
 
             const lat   = parseFloat(meta.latitude  || pos.Latitude  || 0);
             const lng   = parseFloat(meta.longitude || pos.Longitude || 0);
-            const spd   = parseFloat(pos.Sog || 0);
+            // AIS Sog: 0–102.2 kn valid, 102.3 = not available (code 1023)
+            const rawSpd = parseFloat(pos.Sog || 0);
+            const spd    = rawSpd >= 102.3 ? 0 : rawSpd;
             if (lat === 0 && lng === 0) return;
 
             if (!vessels.has(mmsi)) {
