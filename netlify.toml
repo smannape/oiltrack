@@ -50,7 +50,7 @@
 
 [[redirects]]
   from   = "/api/ais-refresh"
-  to     = "/.netlify/functions/fetch-ais-data"
+  to     = "/.netlify/functions/fetch-ais-data-background"
   status = 200
   force  = true
 

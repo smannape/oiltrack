@@ -1,7 +1,10 @@
 // ============================================================
-// netlify/functions/fetch-ais-data.mjs
+// netlify/functions/fetch-ais-data-background.mjs
 //
 // Netlify Pro Background Function -- up to 15 min execution
+// NOTE: The -background suffix is REQUIRED for Netlify to grant
+// the 15-min Pro timeout. Without it the function is killed at
+// 10 seconds -- before the 90s AIS collection completes.
 // Two-pass AIS collection:
 //   Pass 1 (0-45s):  Middle East + Asia (Persian Gulf, Arabian Sea,
 //                    Indian Ocean, Malacca, South China Sea, East Asia)

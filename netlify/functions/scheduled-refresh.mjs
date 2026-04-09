@@ -25,7 +25,7 @@ export default async function handler(req) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-trigger': 'scheduled' },
     }),
-    fetch(siteUrl + '/.netlify/functions/fetch-ais-data', {
+    fetch(siteUrl + '/.netlify/functions/fetch-ais-data-background', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-trigger': 'scheduled' },
     }),
