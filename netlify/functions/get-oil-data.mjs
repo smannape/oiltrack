@@ -30,9 +30,10 @@ function getBlobKey(url) {
   if (url.includes('/oil-prices'))  return 'prices';
   if (url.includes('/oil-news'))    return 'news';
   if (url.includes('/oil-eia'))     return 'eia';
+  if (url.includes('/oil-data'))    return 'eia';   // /api/oil-data → EIA blob
   if (url.includes('/oil-tankers')) return 'tankers';
   if (url.includes('/oil-meta'))    return 'meta';
-  return 'latest';
+  return 'eia';   // fallback to eia (was 'latest', a key that was never written)
 }
 
 function jsonResponse(body, status = 200, extraHeaders = {}) {

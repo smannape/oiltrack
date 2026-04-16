@@ -605,18 +605,30 @@ export default async function handler(req, context) {
       const eiaChange    = eiaEntry.latest.change;
       const eiaChangePct = eiaEntry.latest.changePct;
 
-      if (!prices[priceKey]?.latest?.price) {
-        // Full EIA fallback -- Commodity API didn't return this contract
+      // Staleness check: if commodity API price is > 36h old, treat it as missing
+      // and fall through to EIA-based price. EIA daily spot is the authoritative fallback.
+      const commodityTs  = prices[priceKey]?.latest?.timestamp;
+      const commodityAge = commodityTs ? (Date.now() - new Date(commodityTs).getTime()) : Infinity;
+      const commodityStale = commodityAge > 36 * 60 * 60 * 1000; // > 36 hours
+
+      if (!prices[priceKey]?.latest?.price || commodityStale) {
+        // Full EIA fallback -- Commodity API didn't return this contract OR its price is stale
+        if (commodityStale && prices[priceKey]?.latest?.price) {
+          console.log(`[prices] ${priceKey} commodity price is ${Math.round(commodityAge/3600000)}h old -- overriding with EIA: $${eiaEntry.latest.value}`);
+        } else {
+          console.log(`[prices] ${priceKey} from EIA fallback: $${eiaEntry.latest.value}`);
+        }
         prices[priceKey] = {
           ...fallbackMeta,
-          latest:    { price: eiaEntry.latest.value, timestamp: eiaEntry.latest.period },
+          ...(prices[priceKey] || {}),  // preserve any exchange/flag from commodity API
+          latest:    { price: eiaEntry.latest.value, timestamp: eiaEntry.latest.period,
+                       change: eiaChange, changePct: eiaChangePct },
           change:    eiaChange,
           changePct: eiaChangePct,
           history:   hist,
         };
-        console.log(`[prices] ${priceKey} from EIA fallback: $${eiaEntry.latest.value}`);
       } else {
-        // Commodity API has the live price -- enrich with EIA history + change
+        // Commodity API has a fresh live price -- enrich with EIA history + change
         prices[priceKey].history = hist;
         // Compute change: live price vs previous EIA daily close
         if (prices[priceKey].change == null && eiaEntry.series.length >= 2) {
