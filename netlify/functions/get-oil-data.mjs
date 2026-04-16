@@ -123,7 +123,7 @@ export default async function handler(req, context) {
       { status: 'ok', cacheAgeSeconds, ...data },
       200,
       {
-        'Cache-Control': 'public, max-age=120, stale-while-revalidate=3480',
+        'Cache-Control': 'no-store',   // browser must not cache; CDN uses Netlify-CDN-Cache-Control
         'Netlify-CDN-Cache-Control': 'public, max-age=300, stale-while-revalidate=3300, durable',
         'Cache-Tag': `oil-data,oil-${blobKey}`,
       }

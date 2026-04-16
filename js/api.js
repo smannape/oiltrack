@@ -8,7 +8,10 @@ window.CrudeAPI = (function () {
   // ── FETCH HELPER ───────────────────────────────────────────
   async function getBlob(path, timeoutMs = 8000) {
     try {
-      const res = await fetch(path, { signal: AbortSignal.timeout(timeoutMs) });
+      // cache:'no-cache' forces a network request every time, bypassing the
+      // browser's HTTP cache (stale-while-revalidate). The CDN still serves
+      // its own cached copy (max-age=300) so this is cheap.
+      const res = await fetch(path, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-cache' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const ct = res.headers.get('content-type') || '';
       if (!ct.includes('application/json')) throw new Error('Not JSON -- got HTML page');
