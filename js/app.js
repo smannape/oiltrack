@@ -13,6 +13,7 @@
     chatOpen:          false,
     mapMode:           'production',
     map:               null,
+    pipelineMap:       null,
     mapLayers:         { tankers: null, production: null, consumption: null },
     contracts:         JSON.parse(JSON.stringify(CrudeRadar.contracts)),
     liveDataActive:    false,   // true once real prices arrive -> stops simulation
@@ -1288,6 +1289,349 @@
   // ============================================================
   // NAVIGATION
   // ============================================================
+  // PIPELINE MAP (lazy-init, runs once on first tab visit)
+  // ============================================================
+  function initPipelinePage() {
+    if (state.pipelineMap) {
+      setTimeout(() => state.pipelineMap.invalidateSize(), 100);
+      return;
+    }
+
+    // ── Capacity slider ──────────────────────────────────────────
+    const capSlider = document.getElementById('pl-capacity-slider');
+    const capVal    = document.getElementById('pl-cap-val');
+    function updateSliderGradient() {
+      const pct = (capSlider.value / capSlider.max) * 100;
+      capSlider.style.background = 'linear-gradient(90deg, #ff6b00 ' + pct + '%, #131926 ' + pct + '%)';
+      capVal.textContent = capSlider.value + ' kbd';
+    }
+    capSlider.addEventListener('input', updateSliderGradient);
+    updateSliderGradient();
+
+    // ── Country data ─────────────────────────────────────────────
+    var PL_COUNTRIES = [
+      { flag:'\uD83C\uDDFA\uD83C\uDDF8', name:'United States', val:18635 },
+      { flag:'\uD83C\uDDE8\uD83C\uDDF3', name:'China',         val:17800 },
+      { flag:'\uD83C\uDDF7\uD83C\uDDFA', name:'Russia',        val: 6200 },
+      { flag:'\uD83C\uDDEE\uD83C\uDDF3', name:'India',         val: 5461 },
+      { flag:'\uD83C\uDDEF\uD83C\uDDF5', name:'Japan',         val: 3332 },
+      { flag:'\uD83C\uDDF0\uD83C\uDDF7', name:'South Korea',   val: 3215 },
+      { flag:'\uD83C\uDDF8\uD83C\uDDE6', name:'Saudi Arabia',  val: 3100 },
+      { flag:'\uD83C\uDDE9\uD83C\uDDEA', name:'Germany',       val: 2120 },
+      { flag:'\uD83C\uDDE7\uD83C\uDDF7', name:'Brazil',        val: 1970 },
+      { flag:'\uD83C\uDDE8\uD83C\uDDE6', name:'Canada',        val: 1900 },
+      { flag:'\uD83C\uDDEE\uD83C\uDDF9', name:'Italy',         val: 1920 },
+      { flag:'\uD83C\uDDEE\uD83C\uDDF7', name:'Iran',          val: 1850 },
+      { flag:'\uD83C\uDDF3\uD83C\uDDF1', name:'Netherlands',   val: 1610 },
+      { flag:'\uD83C\uDDF0\uD83C\uDDFC', name:'Kuwait',        val:  936 },
+      { flag:'\uD83C\uDDE6\uD83C\uDDEA', name:'UAE',           val:  922 },
+    ];
+    var PL_COUNTRY_BOUNDS = {
+      'United States': [[24,-125],[49,-66]],
+      'China':         [[18,73],[53,135]],
+      'Russia':        [[41,27],[77,170]],
+      'India':         [[8,68],[37,97]],
+      'Japan':         [[30,130],[45,145]],
+      'South Korea':   [[34,126],[38,130]],
+      'Saudi Arabia':  [[16,36],[32,56]],
+      'Germany':       [[47,5],[55,15]],
+      'Italy':         [[37,6],[47,18]],
+      'Brazil':        [[-33,-74],[5,-34]],
+      'Iran':          [[25,44],[40,63]],
+      'Netherlands':   [[50,3],[53,7]],
+      'Canada':        [[42,-141],[83,-52]],
+      'Kuwait':        [[28,46],[30,48]],
+      'UAE':           [[22,51],[26,56]],
+    };
+    var PL_MAX_VAL = 18635;
+    var listEl = document.getElementById('pl-country-list');
+    PL_COUNTRIES.forEach(function(c, i) {
+      var pct = (c.val / PL_MAX_VAL * 100).toFixed(1);
+      var valStr = c.val.toLocaleString();
+      var row = document.createElement('div');
+      row.className = 'pl-country-row';
+      row.innerHTML = '<span class="pl-country-rank">'+(i+1)+'</span>'
+        +'<span class="pl-country-flag">'+c.flag+'</span>'
+        +'<div class="pl-country-row-inner">'
+          +'<div style="display:flex;align-items:center;gap:6px">'
+            +'<span class="pl-country-name">'+c.name+'</span>'
+            +'<span class="pl-country-val">'+valStr+'</span>'
+          +'</div>'
+          +'<div class="pl-bar-wrap"><div class="pl-bar-fill" style="width:'+pct+'%"></div></div>'
+        +'</div>';
+      row.addEventListener('click', (function(name) {
+        return function() {
+          var bounds = PL_COUNTRY_BOUNDS[name];
+          if (bounds) state.pipelineMap.fitBounds(bounds, { padding: [20, 20] });
+        };
+      })(c.name));
+      listEl.appendChild(row);
+    });
+
+    // ── Leaflet map init ──────────────────────────────────────────
+    state.pipelineMap = L.map('pipeline-map', {
+      center: [25, 40], zoom: 3, zoomControl: false,
+      attributionControl: true, minZoom: 2, maxZoom: 14,
+    });
+    L.control.zoom({ position: 'topright' }).addTo(state.pipelineMap);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: 'abcd', maxZoom: 19,
+    }).addTo(state.pipelineMap);
+
+    // ── Layer groups ─────────────────────────────────────────────
+    var plLayers = {
+      crude:    L.layerGroup().addTo(state.pipelineMap),
+      gas:      L.layerGroup().addTo(state.pipelineMap),
+      product:  L.layerGroup().addTo(state.pipelineMap),
+      refinery: L.layerGroup().addTo(state.pipelineMap),
+      lng:      L.layerGroup().addTo(state.pipelineMap),
+      offshore: L.layerGroup().addTo(state.pipelineMap),
+    };
+
+    // ── Details panel ─────────────────────────────────────────────
+    function showDetails(html) {
+      document.getElementById('pl-details-content').innerHTML = html;
+    }
+    function buildDetailHTML(rows, source) {
+      var html = '<div class="pl-details-grid">';
+      rows.forEach(function(r) {
+        if (r[2] === 'status') {
+          html += '<div class="pl-detail-row"><span class="pl-detail-key">'+r[0]+'</span><span class="pl-status-badge"><span class="pl-status-dot"></span>'+r[1]+'</span></div>';
+        } else {
+          html += '<div class="pl-detail-row"><span class="pl-detail-key">'+r[0]+'</span><span class="pl-detail-val'+(r[2]?' '+r[2]:'')+'">'+ r[1]+'</span></div>';
+        }
+      });
+      html += '</div>';
+      if (source) html += '<div class="pl-source-line">SOURCE: '+source+'</div>';
+      return html;
+    }
+
+    // ── Popup HTML helpers ────────────────────────────────────────
+    function pipelinePopupHTML(name, type, color) {
+      return '<div class="pl-popup-inner"><div class="pl-popup-name" style="color:'+color+'">'+name+'</div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">TYPE</span><span class="pl-popup-val">'+type+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">SOURCE</span><span class="pl-popup-val">OGIM v2.5.1</span></div></div>';
+    }
+    function refineryPopupHTML(r) {
+      var sc = r[6]==='ACTIVE'?'#00e676':'#ffb300';
+      return '<div class="pl-popup-inner"><div class="pl-popup-name">'+r[2]+'</div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">COUNTRY</span><span class="pl-popup-val">'+r[3]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">OPERATOR</span><span class="pl-popup-val">'+r[4]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">CAPACITY</span><span class="pl-popup-val yellow">'+r[5]+' kbd</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">STATUS</span><span class="pl-popup-val" style="color:'+sc+'">&bull; '+r[6]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">COORDS</span><span class="pl-popup-val">'+r[0].toFixed(2)+'&deg;N, '+r[1].toFixed(2)+'&deg;E</span></div></div>';
+    }
+    function lngPopupHTML(t) {
+      return '<div class="pl-popup-inner"><div class="pl-popup-name" style="color:#00b0ff">'+t[2]+'</div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">COUNTRY</span><span class="pl-popup-val">'+t[3]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">CAPACITY</span><span class="pl-popup-val blue">'+t[4]+' MTPA</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">TYPE</span><span class="pl-popup-val">LNG Export Terminal</span></div></div>';
+    }
+    function platformPopupHTML(p) {
+      return '<div class="pl-popup-inner"><div class="pl-popup-name" style="color:#00e676">'+p[2]+'</div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">COUNTRY</span><span class="pl-popup-val">'+p[3]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">OPERATOR</span><span class="pl-popup-val">'+p[4]+'</span></div>'
+        +'<div class="pl-popup-row"><span class="pl-popup-key">TYPE</span><span class="pl-popup-val">'+p[5]+'</span></div></div>';
+    }
+
+    // ── Pipeline helper ───────────────────────────────────────────
+    function addPipeline(coords, name, type, opts, group) {
+      var pl = L.polyline(coords, Object.assign({}, opts, { interactive: true }));
+      var nw = opts.weight;
+      var hw = Math.round(nw * 1.6 + 0.5);
+      pl.on('mouseover', function() {
+        this.setStyle({ weight: hw, opacity: 1 });
+        if (this._path) this._path.style.filter = 'drop-shadow(0 0 4px '+opts.color+')';
+      });
+      pl.on('mouseout', function() {
+        this.setStyle({ weight: nw, opacity: opts.opacity });
+        if (this._path) this._path.style.filter = '';
+      });
+      pl.on('click', function(e) {
+        L.popup({ maxWidth: 300 }).setLatLng(e.latlng)
+          .setContent(pipelinePopupHTML(name, type, opts.color))
+          .openOn(state.pipelineMap);
+        showDetails(buildDetailHTML([['PIPELINE',name],['TYPE',type],['STATUS','ACTIVE','status'],['SOURCE','OGIM v2.5.1']]));
+      });
+      pl.addTo(group);
+      return pl;
+    }
+
+    // ── CRUDE OIL PIPELINES ───────────────────────────────────────
+    var CRUDE_OPTS = { color:'#ff6b00', weight:2.5, opacity:0.85 };
+    [
+      { name:'Druzhba Pipeline',            coords:[[[55.5,37.5],[53,28],[52,21],[51,14]],[[52,21],[47.5,19]]] },
+      { name:'BTC Pipeline',                coords:[[[40.4,49.9],[41.7,44.8],[39.9,41.3],[36.8,35.5]]] },
+      { name:'Trans-Alaska Pipeline',       coords:[[[70.3,-148.7],[64.8,-147.7],[61.1,-146.4]]] },
+      { name:'ESPO Pipeline',               coords:[[[56,98],[54,124],[42.8,132.9]],[[54,124],[46.6,125]]] },
+      { name:'Keystone Pipeline',           coords:[[[52.7,-111.3],[50.4,-104.6],[40,-97],[35.9,-96.8]]] },
+      { name:'Iraq-Turkey (Kirkuk-Ceyhan)', coords:[[[35.5,44.4],[36.3,43.1],[36.8,35.5]]] },
+      { name:'CPC Pipeline',                coords:[[[47.5,53.6],[47.1,51.9],[44.7,37.8]]] },
+      { name:'Trans-Arabian (Tapline)',      coords:[[[25.9,49.7],[24.5,44.5],[24.1,38.1]]] },
+      { name:'Colombia Ca\u00f1o Lim\u00f3n', coords:[[[6.9,-71.8],[10.5,-75.5]]] },
+      { name:'Niger Delta Trunk',            coords:[[[5.5,6],[5.1,7.2],[4.4,7.2]]] },
+      { name:'SUMED Pipeline',               coords:[[[30,32.5],[31,30]]] },
+    ].forEach(function(p) { p.coords.forEach(function(seg) { addPipeline(seg, p.name, 'Crude Oil Pipeline', CRUDE_OPTS, plLayers.crude); }); });
+
+    // ── GAS PIPELINES ─────────────────────────────────────────────
+    var GAS_OPTS = { color:'#00b0ff', weight:2, opacity:0.8, dashArray:'6,3' };
+    [
+      { name:'Nord Stream',          coords:[[[60.7,28.7],[57,16],[54.6,11.7]]] },
+      { name:'TurkStream',           coords:[[[41.5,28.5],[41.2,29]]] },
+      { name:'TANAP/TAP',            coords:[[[40.5,46.5],[41.5,43],[41,36],[41.1,26.5],[40.5,18]]] },
+      { name:'Iran-Turkey Gas',      coords:[[[38,44.5],[38.5,43.5],[39.9,32.9]]] },
+      { name:'TAPI Pipeline',        coords:[[[37.9,58.4],[36,62],[30,66],[23,72]]] },
+      { name:'Medgaz',               coords:[[[36.8,2.5],[37,-0.8]]] },
+      { name:'Maghreb-Europe',       coords:[[[36.8,3],[33.9,-5.6],[36.1,-5.9]]] },
+      { name:'Eastern Australia Gas',coords:[[[22,149],[33.8,151.2]]] },
+      { name:'Yamal-Europe',         coords:[[[67,74],[59,30],[54,18],[52,15]]] },
+    ].forEach(function(p) { p.coords.forEach(function(seg) { addPipeline(seg, p.name, 'Gas Pipeline', GAS_OPTS, plLayers.gas); }); });
+
+    // ── PRODUCT PIPELINES ─────────────────────────────────────────
+    var PROD_OPTS = { color:'#ffb300', weight:1.5, opacity:0.75, dashArray:'3,3' };
+    [
+      { name:'Colonial Pipeline USA', coords:[[[29.7,-95],[32,-84],[35,-80],[38,-77]]] },
+      { name:'Buckeye Pipeline',      coords:[[[41.5,-87],[41.5,-80],[40.5,-75]]] },
+      { name:'Midland-Seadrift TX',   coords:[[[31.8,-102],[28.1,-97]]] },
+      { name:'Rotterdam-Rhine',       coords:[[[51.9,4.5],[51.7,5.5],[51.2,7]]] },
+      { name:'Singapore-Malaysia',    coords:[[[1.3,103.8],[3.1,101.7]]] },
+    ].forEach(function(p) { p.coords.forEach(function(seg) { addPipeline(seg, p.name, 'Product Pipeline', PROD_OPTS, plLayers.product); }); });
+
+    // ── REFINERIES ────────────────────────────────────────────────
+    [
+      [22.38,70.05,'Jamnagar Refinery','India','Reliance Industries',1240,'ACTIVE'],
+      [35.54,129.27,'Ulsan Refinery','South Korea','SK Energy',667,'ACTIVE'],
+      [29.90,-93.93,'Port Arthur Refinery','USA','Saudi Aramco/Shell',635,'ACTIVE'],
+      [10.6,-62.0,'Paraguana Refinery','Venezuela','PDVSA',600,'ACTIVE'],
+      [26.67,50.17,'Ras Tanura Refinery','Saudi Arabia','Saudi Aramco',550,'ACTIVE'],
+      [29.73,-94.97,'Baytown Refinery','USA','ExxonMobil',561,'ACTIVE'],
+      [23.93,51.85,'Ruwais Refinery','UAE','ADNOC',817,'ACTIVE'],
+      [30.44,-91.19,'Baton Rouge Refinery','USA','ExxonMobil',503,'ACTIVE'],
+      [54.98,73.37,'Omsk Refinery','Russia','Gazprom Neft',476,'ACTIVE'],
+      [51.89,4.37,'Pernis Refinery','Netherlands','Shell',404,'ACTIVE'],
+      [30.0,122.0,'Zhoushan Refinery','China','Zhejiang Petrochem',400,'ACTIVE'],
+      [38.87,121.5,'Dalian Refinery','China','PetroChina',410,'ACTIVE'],
+      [30.35,48.30,'Abadan Refinery','Iran','NIORDC',400,'ACTIVE'],
+      [29.72,-95.90,'Garyville Refinery','USA','Marathon',522,'ACTIVE'],
+      [29.40,-94.89,'Galveston Bay Refinery','USA','Marathon',459,'ACTIVE'],
+      [51.23,4.40,'Antwerp Refinery','Belgium','TotalEnergies',310,'ACTIVE'],
+      [50.89,-1.33,'Fawley Refinery','UK','ExxonMobil',320,'ACTIVE'],
+      [3.85,113.07,'Bintulu Refinery','Malaysia','Petronas',100,'ACTIVE'],
+      [23.35,38.33,'Yanbu Refinery','Saudi Arabia','Saudi Aramco',400,'ACTIVE'],
+      [34.85,127.70,'Yeosu Refinery','South Korea','GS Caltex',261,'ACTIVE'],
+      [29.72,-97.94,'Corpus Christi Refinery','USA','Valero',300,'ACTIVE'],
+      [54.55,39.72,'Ryazan Refinery','Russia','Rosneft',340,'ACTIVE'],
+      [29.4,47.9,'Mina Abdulla Refinery','Kuwait','KNPC',270,'ACTIVE'],
+      [29.5,48.0,'Mina Al-Ahmadi','Kuwait','KNPC',466,'ACTIVE'],
+      [26.0,50.5,'Sitra Refinery','Bahrain','BAPCO',267,'ACTIVE'],
+      [36.6,51.4,'Tehran Refinery','Iran','NIORDC',250,'ACTIVE'],
+      [25.3,51.5,'Ras Laffan','Qatar','QatarEnergy',302,'ACTIVE'],
+      [1.26,103.75,'Jurong Island Refinery','Singapore','ExxonMobil',592,'ACTIVE'],
+      [35.67,139.77,'Chiba Refinery','Japan','Idemitsu',220,'ACTIVE'],
+      [37.48,126.62,'Incheon Refinery','South Korea','SK Energy',270,'ACTIVE'],
+    ].forEach(function(r) {
+      var cap = r[5];
+      var radius = Math.min(18, Math.max(5, Math.sqrt(cap / 5000) * 2.5 * 3.5));
+      var cm = L.circleMarker([r[0],r[1]], { radius:radius, fillColor:'#ff1744', color:'#ff6b00', weight:1.2, opacity:0.9, fillOpacity:0.65, interactive:true });
+      cm.on('click', function() {
+        this.bindPopup(refineryPopupHTML(r), { maxWidth:280 }).openPopup();
+        showDetails(buildDetailHTML([['FACILITY',r[2]],['CATEGORY','Crude Oil Refinery'],['COUNTRY',r[3]],['OPERATOR',r[4]],['CAPACITY',r[5].toLocaleString()+',000 bbl/day'],['STATUS',r[6],'status'],['COORDINATES',r[0].toFixed(2)+'\u00b0N, '+r[1].toFixed(2)+'\u00b0E']],'OGIM v2.5.1 / EIA'));
+      });
+      cm.addTo(plLayers.refinery);
+    });
+
+    // ── LNG TERMINALS ─────────────────────────────────────────────
+    [
+      [25.9,51.5,'Ras Laffan LNG','Qatar',77],
+      [-23.8,151.2,'Gladstone LNG','Australia',15.6],
+      [3.2,113.0,'Bintulu LNG','Malaysia',29.3],
+      [4.4,7.2,'Bonny Island LNG','Nigeria',22],
+      [29.7,-93.9,'Sabine Pass LNG','USA',30],
+      [10.2,-61.7,'Atlantic LNG','Trinidad',14.8],
+      [35.6,139.9,'Tokyo Bay LNG','Japan',11],
+      [37.5,126.6,'Incheon LNG','South Korea',8.4],
+      [41.4,2.2,'Barcelona LNG','Spain',9.5],
+      [43.4,4.9,'Fos-sur-Mer LNG','France',8.5],
+      [-31.9,115.9,'Woodside LNG','Australia',16.9],
+      [22.5,114.1,'Dapeng LNG','China',6.7],
+    ].forEach(function(t) {
+      var icon = L.divIcon({
+        className: '',
+        html: '<div style="width:10px;height:10px;background:#00b0ff;transform:rotate(45deg);border:1px solid rgba(255,255,255,0.35);box-shadow:0 0 8px rgba(0,176,255,0.7);margin:4px"></div>',
+        iconSize: [18,18], iconAnchor: [9,9], popupAnchor: [0,-9],
+      });
+      var m = L.marker([t[0],t[1]], { icon:icon, interactive:true });
+      m.on('click', function() {
+        this.bindPopup(lngPopupHTML(t), { maxWidth:260 }).openPopup();
+        showDetails(buildDetailHTML([['TERMINAL',t[2]],['CATEGORY','LNG Export Terminal'],['COUNTRY',t[3]],['CAPACITY',t[4]+' MTPA'],['STATUS','ACTIVE','status']],'OGIM v2.5.1'));
+      });
+      m.addTo(plLayers.lng);
+    });
+
+    // ── OFFSHORE PLATFORMS ────────────────────────────────────────
+    [
+      [29.2,-90.0,'Thunder Horse','USA','BP','FPSO'],
+      [57.5,1.7,'Forties Alpha','UK','Apache','Fixed Platform'],
+      [58.0,2.0,'Brent Charlie','UK','Shell','Fixed Platform'],
+      [51.5,3.0,'P-36','Netherlands','Total','Semi-sub'],
+      [26.0,53.0,'Salman Field','Iran','IOOC','Fixed Platform'],
+      [25.5,50.5,'Bahrain Field','Bahrain','BAPCO','Fixed Platform'],
+      [4.0,7.5,'Bonga FPSO','Nigeria','Shell','FPSO'],
+      [3.0,8.5,'Erha FPSO','Nigeria','ExxonMobil','FPSO'],
+      [-22.5,-39.5,'Buzios FPSO','Brazil','Petrobras','FPSO'],
+      [-23.0,-40.0,'Lula FPSO','Brazil','Petrobras','FPSO'],
+      [20.5,60.5,'Block 8 Oman','Oman','OQ','Fixed Platform'],
+      [12.0,53.5,'Masila Block','Yemen','PetroMasila','Fixed Platform'],
+      [1.0,104.5,'Natuna D-Alpha','Indonesia','ExxonMobil','Semi-sub'],
+      [-5.0,11.5,'Girassol FPSO','Angola','TotalEnergies','FPSO'],
+      [-9.0,12.0,'Dalia FPSO','Angola','TotalEnergies','FPSO'],
+      [65.0,57.0,'Prirazlomnoye','Russia','Gazprom','Fixed Platform'],
+      [69.5,57.5,'Novoportovskoye','Russia','Gazprom','Gravity Platform'],
+      [56.5,-61.0,'Hibernia','Canada','ExxonMobil','GBS'],
+      [46.5,-48.5,'Terra Nova FPSO','Canada','Suncor','FPSO'],
+      [10.5,-63.0,'Dragon Field','Venezuela','Shell','Semi-sub'],
+    ].forEach(function(p) {
+      var cm = L.circleMarker([p[0],p[1]], { radius:4, fillColor:'#00e676', color:'#00e676', weight:1, opacity:0.8, fillOpacity:0.7, interactive:true });
+      cm.on('click', function() {
+        this.bindPopup(platformPopupHTML(p), { maxWidth:250 }).openPopup();
+        showDetails(buildDetailHTML([['PLATFORM',p[2]],['CATEGORY','Offshore Platform'],['COUNTRY',p[3]],['OPERATOR',p[4]],['TYPE',p[5]],['STATUS','ACTIVE','status']],'OGIM v2.5.1'));
+      });
+      cm.addTo(plLayers.offshore);
+    });
+
+    // ── MAP LABELS ────────────────────────────────────────────────
+    [[25,50,'PERSIAN GULF'],[15,42,'RED SEA'],[43,28,'BLACK SEA'],
+     [36,18,'MEDITERRANEAN'],[27,-90,'GULF OF MEXICO'],[62,-3,'NORTH SEA'],
+     [-5,-25,'SOUTH ATLANTIC'],[5,2,'GULF OF GUINEA']
+    ].forEach(function(lbl) {
+      var icon = L.divIcon({ className:'', html:'<div class="pl-map-label">'+lbl[2]+'</div>', iconSize:[120,16], iconAnchor:[60,8] });
+      L.marker([lbl[0],lbl[1]], { icon:icon, interactive:false, zIndexOffset:-1000 }).addTo(state.pipelineMap);
+    });
+
+    // ── LAYER TOGGLES ─────────────────────────────────────────────
+    document.querySelectorAll('#page-pipeline .pl-layer-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var key = this.dataset.layer;
+        if (this.checked) state.pipelineMap.addLayer(plLayers[key]);
+        else              state.pipelineMap.removeLayer(plLayers[key]);
+        var statEl = document.getElementById('pl-stat-refineries');
+        if (statEl) statEl.textContent = document.getElementById('pl-cb-refinery').checked ? '30' : '\u2014';
+      });
+    });
+
+    // ── ENTRANCE ANIMATION ────────────────────────────────────────
+    document.querySelectorAll('#page-pipeline .pl-panel').forEach(function(el, i) {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(-8px)';
+      el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      setTimeout(function() { el.style.opacity = '1'; el.style.transform = 'translateX(0)'; }, 80 + i * 60);
+    });
+
+    setTimeout(function() { state.pipelineMap.invalidateSize(); }, 150);
+  }
+
+  // ============================================================
   function setupNavigation() {
     document.querySelectorAll('[data-page]').forEach(link => {
       link.addEventListener('click', e => { e.preventDefault(); navigateTo(link.dataset.page); });
@@ -1305,6 +1649,7 @@
     if (page === 'stats')  initStatsPage();
     if (page === 'country') initCountryPage();
     if (page === 'news')    initNewsFilters();
+    if (page === 'pipeline') initPipelinePage();
     if (page === 'dashboard' && state.map) setTimeout(() => state.map.invalidateSize(), 100);
     // When user opens the Tankers page, refresh data and re-render table immediately
     if (page === 'tankers') {
