@@ -23,23 +23,27 @@
 import { getStore } from '@netlify/blobs';
 
 // ?? ENV VARS ??????????????????????????????????????????????????
-const COMMODITY_API_KEY = process.env.COMMODITY_API_KEY || '';
-const EIA_KEY           = process.env.EIA_API_KEY       || '';
-const GNEWS_KEY         = process.env.GNEWS_API_KEY     || '';
-const DATALASTIC_KEY    = process.env.DATALASTIC_API_KEY || '';
+const EIA_KEY        = process.env.EIA_API_KEY        || '';
+const GNEWS_KEY      = process.env.GNEWS_API_KEY      || '';
+const DATALASTIC_KEY = process.env.DATALASTIC_API_KEY || '';
 
-// COMMODITY PRICE API (omkarcloud) -- one request per commodity
-// Endpoint: GET https://commodity-price-api.omkar.cloud/commodity-price?name=<name>
-// Header: API-Key: <key>
-// Free tier: 5,000 requests/month
-// Returns: { commodity_name, exchange, price_usd, updated_at }
-const COMMODITY_CONTRACTS = [
-  { apiName: 'crude_oil',      id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   flag: '??' },
-  { apiName: 'brent_crude_oil', id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   flag: '?'  },
-  { apiName: 'natural_gas',    id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', flag: '?'  },
-  { apiName: 'heating_oil',    id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   flag: '?'  },
-  { apiName: 'gasoline_rbob',  id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   flag: '?'  },
+// YAHOO FINANCE -- real-time futures prices via v8/finance/chart
+// No API key required. 15-min delayed futures from NYMEX/ICE.
+// Tickers: CL=F WTI crude, BZ=F Brent, NG=F natural gas,
+//          HO=F heating oil, RB=F RBOB gasoline.
+const YFINANCE_CONTRACTS = [
+  { ticker: 'CL=F', id: 'wti',      name: 'WTI Crude',     unit: 'USD/bbl',   exchange: 'NYMEX', flag: '??' },
+  { ticker: 'BZ=F', id: 'brent',    name: 'Brent Crude',   unit: 'USD/bbl',   exchange: 'ICE',   flag: '?'  },
+  { ticker: 'NG=F', id: 'crude_ng', name: 'Natural Gas',   unit: 'USD/MMBtu', exchange: 'NYMEX', flag: '?'  },
+  { ticker: 'HO=F', id: 'hho',      name: 'Heating Oil',   unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
+  { ticker: 'RB=F', id: 'rbob',     name: 'RBOB Gasoline', unit: 'USD/gal',   exchange: 'NYMEX', flag: '?'  },
 ];
+
+const YF_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': '*/*',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 
 // ?? EIA SERIES ????????????????????????????????????????????????
 const EIA_SERIES = [
@@ -48,10 +52,8 @@ const EIA_SERIES = [
   { id: 'PET.WDISTUS1.W',   key: 'us_distillate',       freq: 'weekly',  length: 52  },
   { id: 'PET.WCRRIUS2.W',   key: 'us_crude_imports_w',  freq: 'weekly',  length: 52  },
   { id: 'PET.MCRFPUS2.M',   key: 'us_field_production', freq: 'monthly', length: 60  },
-  // EIA price series -- free/unlimited, used as price history + Commodity API fallback
-  { id: 'PET.RWTC.D',   key: 'wti_spot_daily',   freq: 'daily', length: 60 },
-  { id: 'PET.RBRTE.D',  key: 'brent_spot_daily', freq: 'daily', length: 60 },
-  { id: 'NG.RNGWHHD.D', key: 'henry_hub_daily',  freq: 'daily', length: 60 },
+  // NOTE: EIA daily price series (WTI/Brent/HH) removed -- Yahoo Finance now provides
+  // live prices + 60-day history directly from NYMEX/ICE futures.
 ];
 
 // ?? RSS FEEDS (confirmed working) ????????????????????????????
@@ -152,48 +154,64 @@ async function fetchText(url, timeoutMs = 15000) {
 }
 
 // ==============================================================
-// COMMODITY PRICE API (omkarcloud) -- parallel per-commodity calls
+// YAHOO FINANCE -- parallel per-ticker v8/finance/chart calls
+// No API key required. Uses NYMEX/ICE front-month futures.
+// Returns price + 60-day daily history + day-over-day change.
 // ==============================================================
 
-// Fetches each commodity individually in parallel.
-// Quota: 24 rounds/day × 5 contracts = 120 req/day × 31 days = ~3,720 req/month.
-// Hard monthly cap: 4,500 requests (500 buffer from 5,000 free tier).
-async function fetchSingleCommodity(contract) {
-  const url = `https://commodity-price-api.omkar.cloud/commodity-price?name=${contract.apiName}`;
-  // retries=1: no retries to keep API call count predictable (1 request per contract)
-  const raw = await fetchJSON(url, 15000, { 'API-Key': COMMODITY_API_KEY }, 1);
+async function fetchYFinanceTicker(contract) {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(contract.ticker)}?interval=1d&range=60d`;
+  const raw = await fetchJSON(url, 15000, YF_HEADERS, 3);
 
-  if (!raw || !raw.price_usd) {
-    console.warn(`[prices] Commodity API failed for ${contract.apiName}:`, JSON.stringify(raw)?.substring(0, 200));
+  if (!raw?.chart?.result?.[0]) {
+    console.warn(`[prices] Yahoo Finance: no data for ${contract.ticker}`);
     return null;
   }
 
-  const price = parseFloat(raw.price_usd);
+  const result = raw.chart.result[0];
+  const meta   = result.meta;
+  const price  = meta?.regularMarketPrice;
   if (!price || isNaN(price)) return null;
+
+  // Build chronological daily history from OHLCV closes
+  const timestamps = result.timestamp || [];
+  const closes     = result.indicators?.quote?.[0]?.close || [];
+  const history    = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    if (closes[i] != null) {
+      const date = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+      history.push({ period: date, value: parseFloat(closes[i].toFixed(4)) });
+    }
+  }
+
+  // Day-over-day change: compare last two valid closes in history
+  let change = null, changePct = null;
+  if (history.length >= 2) {
+    const curr = history[history.length - 1].value;
+    const prev = history[history.length - 2].value;
+    change    = parseFloat((curr - prev).toFixed(4));
+    changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
+  }
+
+  const latestTs = history.length > 0 ? history[history.length - 1].period : new Date().toISOString().slice(0, 10);
 
   return {
     id:       contract.id,
     name:     contract.name,
     unit:     contract.unit,
-    exchange: raw.exchange || 'NYMEX',
+    exchange: contract.exchange,
     flag:     contract.flag,
-    latest: {
-      price,
-      timestamp: raw.updated_at || new Date().toISOString(),
-      change:    null,  // API does not provide change data; EIA fallback handles history
-      changePct: null,
-    },
-    change:    null,
-    changePct: null,
-    history:   [],  // EIA daily series provides history
+    source:   'Yahoo Finance',
+    latest: { price, timestamp: latestTs, change, changePct },
+    change,
+    changePct,
+    history,
   };
 }
 
-async function fetchAllCommodityPrices() {
-  if (!COMMODITY_API_KEY) return null;
-
+async function fetchAllYFinancePrices() {
   const results = await Promise.allSettled(
-    COMMODITY_CONTRACTS.map(c => fetchSingleCommodity(c))
+    YFINANCE_CONTRACTS.map(c => fetchYFinanceTicker(c))
   );
 
   const prices = {};
@@ -204,7 +222,7 @@ async function fetchAllCommodityPrices() {
   }
 
   const found = Object.keys(prices);
-  console.log('[prices] Commodity API: ' + found.length + '/' + COMMODITY_CONTRACTS.length + ' contracts: ' + found.join(', '));
+  console.log('[prices] Yahoo Finance: ' + found.length + '/' + YFINANCE_CONTRACTS.length + ' contracts: ' + found.join(', '));
   return found.length ? prices : null;
 }
 
@@ -480,100 +498,25 @@ export default async function handler(req, context) {
   const store  = getStore('crude-radar');
   const errors = [];
 
-  // ?? 1. PRICES (Commodity Price API) ???????????????????????
+  // ?? 1. PRICES (Yahoo Finance futures) ????????????????????
+  // No API key. No quota. Fetches all 5 tickers in parallel.
+  // Falls back to last cached prices if Yahoo Finance is unreachable.
   const prices = {};
 
-  // ── QUOTA CONFIGURATION ──────────────────────────────────────
-  // Free tier: 5,000 requests/month.
-  // Each round fetches 5 contracts (1 request each) = 5 requests per round.
-  //
-  // HARD MONTHLY CAP: 4,500 requests (900 rounds × 5 contracts)
-  //   → 500 request buffer for retries / manual refreshes / safety
-  //
-  // DAILY LIMIT: 24 rounds/day (= every hourly cron trigger)
-  //   → 24 rounds × 5 contracts × 31 days = 3,720 requests/month (74%)
-  //   → Well within the 4,500 hard cap
-  //
-  // HOUR GAP: minimum 1 hour between rounds
-  //   → Matches the hourly cron schedule — fetch on every trigger
-  // ─────────────────────────────────────────────────────────────
-  const CONTRACTS_PER_ROUND  = COMMODITY_CONTRACTS.length;  // 5
-  const MONTHLY_REQUEST_CAP  = 4500;                        // hard cap (5000 - 500 buffer)
-  const MAX_ROUNDS_PER_MONTH = Math.floor(MONTHLY_REQUEST_CAP / CONTRACTS_PER_ROUND); // 900
-  const MAX_ROUNDS_PER_DAY   = 24;
-  const MIN_HOUR_GAP         = 1;
-
-  const now         = new Date();
-  const today       = now.toISOString().slice(0, 10);       // YYYY-MM-DD
-  const thisMonth   = now.toISOString().slice(0, 7);        // YYYY-MM
-  const currentHour = now.getUTCHours();
-
-  // Load quota tracking from blob
-  let priceMeta = { date: '', dayCount: 0, lastFetchHour: -1, month: '', monthRequests: 0 };
-  try {
-    const meta = await store.get('prices-meta', { type: 'text' });
-    if (meta) priceMeta = JSON.parse(meta);
-  } catch {}
-
-  // Reset daily counter if it's a new day
-  if (priceMeta.date !== today) {
-    priceMeta.date = today;
-    priceMeta.dayCount = 0;
-    priceMeta.lastFetchHour = -1;
-  }
-
-  // Reset monthly counter if it's a new month
-  if (priceMeta.month !== thisMonth) {
-    priceMeta.month = thisMonth;
-    priceMeta.monthRequests = 0;
-  }
-
-  const hoursSinceLast = priceMeta.lastFetchHour < 0
-    ? 999
-    : (currentHour - priceMeta.lastFetchHour + 24) % 24;
-
-  const monthlyBudgetLeft = MONTHLY_REQUEST_CAP - (priceMeta.monthRequests || 0);
-  const canAffordRound    = monthlyBudgetLeft >= CONTRACTS_PER_ROUND;
-  const dailyAllows       = priceMeta.dayCount < MAX_ROUNDS_PER_DAY;
-  const hourGapAllows     = hoursSinceLast >= MIN_HOUR_GAP;
-  const canFetch          = canAffordRound && dailyAllows && hourGapAllows;
-
-  if (!COMMODITY_API_KEY) {
-    console.warn('[prices] COMMODITY_API_KEY not set -- will use EIA fallback');
-    errors.push('COMMODITY_API_KEY missing');
-  } else if (!canFetch) {
-    // Quota guard -- load cached prices instead
-    const reason = !canAffordRound ? `monthly cap reached (${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} requests)`
-                 : !dailyAllows    ? `daily limit (${priceMeta.dayCount}/${MAX_ROUNDS_PER_DAY} rounds)`
-                 :                   `hour gap (${hoursSinceLast}h < ${MIN_HOUR_GAP}h, last at hour ${priceMeta.lastFetchHour} UTC)`;
-    console.log(`[prices] Quota guard: ${reason}. Month: ${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} reqs. Loading cache.`);
+  console.log('[prices] Fetching Yahoo Finance futures...');
+  const yfBatch = await fetchAllYFinancePrices();
+  if (yfBatch) {
+    Object.assign(prices, yfBatch);
+    // Cache for fallback
+    await store.set('prices-cache', JSON.stringify(yfBatch)).catch(() => {});
+    console.log(`[prices] Yahoo Finance OK: ${Object.keys(yfBatch).join(', ')}`);
+  } else {
+    // Yahoo Finance unreachable -- use last cached prices
+    errors.push('Yahoo Finance fetch failed -- using cached prices');
     try {
       const cached = await store.get('prices-cache', { type: 'text' });
-      if (cached) Object.assign(prices, JSON.parse(cached));
+      if (cached) { Object.assign(prices, JSON.parse(cached)); console.log('[prices] Using cached prices from previous fetch'); }
     } catch {}
-  } else {
-    // Quota allows -- call API
-    const batch = await fetchAllCommodityPrices();
-    // Count requests sent (even if some failed -- they consume API quota)
-    const requestsSent = CONTRACTS_PER_ROUND;
-    if (batch) {
-      Object.assign(prices, batch);
-      console.log(`[prices] Fetched OK. Round ${priceMeta.dayCount + 1}/${MAX_ROUNDS_PER_DAY} today.`);
-    } else {
-      errors.push('Commodity API fetch failed -- EIA fallback will apply');
-      // Load previous cache as fallback
-      try {
-        const cached = await store.get('prices-cache', { type: 'text' });
-        if (cached) { Object.assign(prices, JSON.parse(cached)); console.log('[prices] Using cached prices from previous fetch'); }
-      } catch {}
-    }
-    // Always update counters (requests were sent regardless of success)
-    priceMeta.dayCount++;
-    priceMeta.lastFetchHour = currentHour;
-    priceMeta.monthRequests = (priceMeta.monthRequests || 0) + requestsSent;
-    if (batch) await store.set('prices-cache', JSON.stringify(batch)).catch(() => {});
-    await store.set('prices-meta', JSON.stringify(priceMeta)).catch(() => {});
-    console.log(`[prices] Month: ${priceMeta.monthRequests}/${MONTHLY_REQUEST_CAP} requests (${(priceMeta.monthRequests / MONTHLY_REQUEST_CAP * 100).toFixed(1)}% used).`);
   }
 
   // ?? 2. EIA DATA ???????????????????????????????????????????
@@ -592,60 +535,6 @@ export default async function handler(req, context) {
     }
     console.log(`[eia] Got ${Object.keys(eia).length}/${EIA_SERIES.length} series`);
 
-    // EIA price fallbacks: fire when Commodity API missing OR returned no price
-    // Merge EIA daily prices as history into Commodity API contracts
-    // AND as full fallback if Commodity API failed
-    // Helper: merge EIA daily data into a price entry
-    // - If Commodity API succeeded: attach history + compute change from EIA
-    // - If Commodity API failed: build full price entry from EIA as fallback
-    function mergeEIA(priceKey, eiaKey, fallbackMeta) {
-      const eiaEntry = eia[eiaKey];
-      if (!eiaEntry?.series?.length) return;
-      const hist = [...eiaEntry.series].reverse().map(d => ({ period: d.period, value: d.value }));
-      const eiaChange    = eiaEntry.latest.change;
-      const eiaChangePct = eiaEntry.latest.changePct;
-
-      // Staleness check: if commodity API price is > 36h old, treat it as missing
-      // and fall through to EIA-based price. EIA daily spot is the authoritative fallback.
-      const commodityTs  = prices[priceKey]?.latest?.timestamp;
-      const commodityAge = commodityTs ? (Date.now() - new Date(commodityTs).getTime()) : Infinity;
-      const commodityStale = commodityAge > 36 * 60 * 60 * 1000; // > 36 hours
-
-      if (!prices[priceKey]?.latest?.price || commodityStale) {
-        // Full EIA fallback -- Commodity API didn't return this contract OR its price is stale
-        if (commodityStale && prices[priceKey]?.latest?.price) {
-          console.log(`[prices] ${priceKey} commodity price is ${Math.round(commodityAge/3600000)}h old -- overriding with EIA: $${eiaEntry.latest.value}`);
-        } else {
-          console.log(`[prices] ${priceKey} from EIA fallback: $${eiaEntry.latest.value}`);
-        }
-        prices[priceKey] = {
-          ...fallbackMeta,
-          ...(prices[priceKey] || {}),  // preserve any exchange/flag from commodity API
-          latest:    { price: eiaEntry.latest.value, timestamp: eiaEntry.latest.period,
-                       change: eiaChange, changePct: eiaChangePct },
-          change:    eiaChange,
-          changePct: eiaChangePct,
-          history:   hist,
-        };
-      } else {
-        // Commodity API has a fresh live price -- enrich with EIA history + change
-        prices[priceKey].history = hist;
-        // Compute change: live price vs previous EIA daily close
-        if (prices[priceKey].change == null && eiaEntry.series.length >= 2) {
-          const livePrice = prices[priceKey].latest.price;
-          const prevClose = eiaEntry.series[1].value; // series[0] = latest, series[1] = previous day
-          prices[priceKey].change    = parseFloat((livePrice - prevClose).toFixed(3));
-          prices[priceKey].changePct = parseFloat(((livePrice - prevClose) / prevClose * 100).toFixed(2));
-          // Also set on the latest object for frontend consistency
-          prices[priceKey].latest.change    = prices[priceKey].change;
-          prices[priceKey].latest.changePct = prices[priceKey].changePct;
-        }
-      }
-    }
-
-    mergeEIA('wti',      'wti_spot_daily',   { id: 'wti',      name: 'WTI Crude',   unit: 'USD/bbl',   exchange: 'EIA/NYMEX', flag: '??' });
-    mergeEIA('brent',    'brent_spot_daily',  { id: 'brent',    name: 'Brent Crude',  unit: 'USD/bbl',   exchange: 'EIA/ICE',   flag: '?'  });
-    mergeEIA('crude_ng', 'henry_hub_daily',   { id: 'crude_ng', name: 'Natural Gas',  unit: 'USD/MMBtu', exchange: 'EIA/NYMEX', flag: '?'  });
   }
 
   // ?? 3. DERIVED PRICES ?????????????????????????????????????
