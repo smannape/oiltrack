@@ -270,10 +270,20 @@ export default async function handler(req) {
   const msgs2 = await collectVessels(BOXES_EUROPE_AMERICAS, PASS_MS, vessels);
   console.log('[AIS] Pass 2 done. msgs=' + msgs2 + ' vessels=' + vessels.size);
 
+  // Non-tanker name patterns: ferries, rescue, patrol, container, tugs
+  const NON_TANKER_NAME = /\b(FERRY|FERJA|JET\b|CRUISE|RO.?RO|PILOT|PATROL|RESCUE|LIFEBOAT|TRAWLER|CARGO|CONTAINER|BULK|HIGHSPEED|SEALINK|COASTGUARD|SUPPLY|AHTS|ANCHOR|DRILLSHIP|CABLE|RESEARCH|SURVEY|EXCURSION|EXPRESS|SEACAT|HOVERCRAFT)\b/i;
+
   // Post-process: classify vessel type and filter
   const tankers = Array.from(vessels.values())
     .filter(v => v.lat !== 0 || v.lng !== 0)
-    .filter(v => !v.typeCode || TANKER_TYPES.has(v.typeCode))
+    // Type-confirmed tankers pass; unknowns need speed ≤ 20 kn AND no non-tanker name
+    .filter(v => {
+      if (TANKER_TYPES.has(v.typeCode)) return true;
+      const spd = parseFloat(v.speed) || 0;
+      if (spd > 20) return false;               // ferries / high-speed craft
+      if (NON_TANKER_NAME.test(v.name)) return false;
+      return true;
+    })
     .map(v => ({
       ...v,
       shipType: isLNG(v.typeCode, v.name) ? 'lng' : 'oil',
