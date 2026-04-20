@@ -52,8 +52,7 @@
     startClock();
     renderPriceGrid();
     renderNewsPanel([]);
-    // Snapshot the static tanker seed so it survives applyLiveTankers overwrites
-    CrudeRadar._staticTankers = JSON.parse(JSON.stringify(CrudeRadar.tankers));
+    // No static seed to snapshot — live AIS only
     renderTankersTable(CrudeRadar.tankers);
     updateTankerStats(CrudeRadar.tankers, 0);
     renderProductionTable();
@@ -1167,95 +1166,82 @@
 
   // Hardcoded ME/Asia/global tanker positions -- always rendered as base layer
   // These supplement live AIS data and are never overwritten
-  var SEED_TANKERS = [
-    {name:'BAHRI YANBU',    flag:'SA',type:'VLCC',    lat:26.60,lng:56.30,status:'anchored', speed:'0.0', from:'Ras Tanura',  to:'Rotterdam'},
-    {name:'BAHRI JUBAIL',   flag:'SA',type:'VLCC',    lat:27.10,lng:56.80,status:'anchored', speed:'0.0', from:'Jubail',      to:'Rotterdam'},
-    {name:'SIRIUS STAR',    flag:'SA',type:'ULCC',    lat:26.20,lng:57.10,status:'anchored', speed:'0.0', from:'Ras Tanura',  to:'Waiting'},
-    {name:'ADNOC UMRIQAH',  flag:'AE',type:'VLCC',    lat:25.30,lng:55.10,status:'moored',   speed:'0.0', from:'Fujairah',    to:'Ruwais'},
-    {name:'AL DHAFRA',      flag:'AE',type:'Aframax', lat:24.50,lng:54.40,status:'moored',   speed:'0.0', from:'Jebel Ali',   to:'Singapore'},
-    {name:'AL BIDAA',       flag:'KW',type:'Suezmax', lat:29.10,lng:48.10,status:'anchored', speed:'0.0', from:'Mina Ahmadi', to:'Rotterdam'},
-    {name:'AL SHUWAIMIYAH', flag:'BH',type:'VLCC',    lat:26.00,lng:50.60,status:'moored',   speed:'0.0', from:'Sitra',       to:'Rotterdam'},
-    {name:'YUAN HAI',       flag:'CN',type:'VLCC',    lat:25.80,lng:57.50,status:'underway', speed:'13.5',from:'Ras Tanura',  to:'Qingdao'},
-    {name:'SAUDI VISION',   flag:'SA',type:'VLCC',    lat:22.10,lng:62.30,status:'underway', speed:'14.5',from:'Ras Tanura',  to:'Rotterdam'},
-    {name:'MAHARASHTRA',    flag:'IN',type:'Suezmax', lat:22.50,lng:59.80,status:'underway', speed:'9.2', from:'Hormuz',      to:'Mumbai'},
-    {name:'JNPT STAR',      flag:'IN',type:'Aframax', lat:18.70,lng:66.40,status:'underway', speed:'12.1',from:'Muscat',      to:'Mumbai'},
-    {name:'AL SALAM',       flag:'OM',type:'Suezmax', lat:20.30,lng:61.50,status:'underway', speed:'11.8',from:'Oman',        to:'Rotterdam'},
-    {name:'GLORY TRADER',   flag:'LR',type:'Suezmax', lat:15.20,lng:42.80,status:'underway', speed:'13.8',from:'Jeddah',      to:'Rotterdam'},
-    {name:'CAPE PIONEER',   flag:'LR',type:'VLCC',    lat:12.60,lng:43.50,status:'underway', speed:'11.2',from:'Ras Tanura',  to:'Cape Route'},
-    {name:'HELLESPONT AJAX',flag:'GR',type:'ULCC',    lat:13.50,lng:48.20,status:'underway', speed:'12.9',from:'Kharg Island',to:'Ulsan'},
-    {name:'MARSHAL ISLAND', flag:'MH',type:'VLCC',    lat:5.80, lng:74.20,status:'underway', speed:'15.2',from:'Muscat',      to:'Singapore'},
-    {name:'PACIFIC ARROW',  flag:'HK',type:'Aframax', lat:8.20, lng:75.40,status:'underway', speed:'12.5',from:'Sikka',       to:'Singapore'},
-    {name:'PACIFIC VOYAGER',flag:'MH',type:'Suezmax', lat:2.50, lng:83.10,status:'underway', speed:'14.1',from:'Oman',        to:'Ningbo'},
-    {name:'MARINA BAY',     flag:'SG',type:'Suezmax', lat:2.10, lng:96.50,status:'underway', speed:'13.7',from:'Oman',        to:'Singapore'},
-    {name:'SINGAPORE SPIRIT',flag:'SG',type:'Aframax',lat:3.50, lng:103.8,status:'underway', speed:'12.8',from:'Singapore',   to:'Busan'},
-    {name:'INDO MASTER',    flag:'ID',type:'Aframax', lat:1.20, lng:104.5,status:'underway', speed:'11.5',from:'Singapore',   to:'Jakarta'},
-    {name:'HK FORTUNE',     flag:'HK',type:'VLCC',    lat:10.50,lng:112.3,status:'underway', speed:'14.1',from:'Singapore',   to:'Ningbo'},
-    {name:'HK VIRTUE',      flag:'HK',type:'VLCC',    lat:15.80,lng:115.6,status:'underway', speed:'13.9',from:'Oman',        to:'Qingdao'},
-    {name:'HK EXCELLENCE',  flag:'HK',type:'Suezmax', lat:8.30, lng:109.2,status:'underway', speed:'12.3',from:'Singapore',   to:'Zhoushan'},
-    {name:'NISSHO MARU',    flag:'JP',type:'VLCC',    lat:31.20,lng:124.5,status:'underway', speed:'15.8',from:'Singapore',   to:'Tokyo'},
-    {name:'KOREA STAR',     flag:'KR',type:'VLCC',    lat:33.50,lng:126.8,status:'underway', speed:'14.2',from:'Kuwait',      to:'Ulsan'},
-    {name:'ATLANTIC GLORY', flag:'LR',type:'VLCC',    lat:35.60,lng:-40.2,status:'underway', speed:'14.1',from:'Houston',     to:'Rotterdam'},
-    {name:'CAPE HARMONY',   flag:'LR',type:'VLCC',    lat:-32.5,lng:18.40,status:'underway', speed:'13.2',from:'Ras Tanura',  to:'Rotterdam'},
-    {name:'CAPE FREEDOM',   flag:'LR',type:'VLCC',    lat:-28.3,lng:33.50,status:'underway', speed:'14.0',from:'Kuwait',      to:'Rotterdam'},
-  ];
+    // SEED_TANKERS removed -- only live AIS data shown (fetch-ais-data-background.mjs)
 
   function renderTankersLayer() {
     var group = L.layerGroup();
-    var colorMap = { underway:'#00e676', anchored:'#ffb300', moored:'#00b0ff' };
 
-    // First render SEED_TANKERS that aren't already in live data
-    var liveMmsis = new Set((CrudeRadar.tankers||[]).map(function(t){ return t.mmsi; }));
-    SEED_TANKERS.forEach(function(t) {
-      var col = colorMap[t.status] || '#8899aa';
-      var m = L.circleMarker([t.lat, t.lng], {
-        radius: t.status==='underway' ? 5 : 4,
-        fillColor: col, color:'#000', weight:1, opacity:0.85, fillOpacity:0.75,
-        dashArray: '3,3',  // dashed outline = seed/estimated position
-      });
-      m.bindTooltip(
-        '<div style="background:#111520;border:1px solid '+col+';padding:8px 12px;min-width:160px;font-family:monospace">' +
-        '<div style="color:'+col+';font-size:11px;margin-bottom:4px">'+t.name+' <span style="color:#556;font-size:9px">[EST]</span></div>' +
-        '<div style="color:#8899aa;font-size:10px">'+t.flag+' '+t.type+'</div>' +
-        '<div style="color:#8899aa;font-size:10px">'+t.from+' -> '+t.to+'</div>' +
-        '<div style="color:#8899aa;font-size:10px">'+t.status.toUpperCase()+' '+t.speed+' kn</div>' +
-        '</div>',
-        {direction:'top', opacity:1}
-      );
-      group.addLayer(m);
-    });
+    // ── Color helpers ─────────────────────────────────────────────
+    // Oil Tankers: green (underway) / amber (anchored) / cyan (moored)
+    // LNG Ships:   blue triangle always
+    var oilColor = function(status) {
+      if (status === 'anchored') return '#ffb300';
+      if (status === 'moored')   return '#40c4ff';
+      return '#00e676';  // underway / default
+    };
+    var LNG_COLOR = '#2979ff';
 
-    // Then render live AIS tankers on top
+    // ── LNG Triangle Icon ─────────────────────────────────────────
+    function lngIcon(status) {
+      var fill  = status === 'anchored' ? '#ffb300' : LNG_COLOR;
+      var glow  = status === 'anchored' ? '#ff8f00' : '#1565c0';
+      var svg   = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="-7 -7 14 14" style="overflow:visible">'
+                + '<polygon points="0,-6 5.5,4.5 -5.5,4.5" fill="' + fill + '" stroke="' + glow + '" stroke-width="1.3" opacity="0.93"/>'
+                + '</svg>';
+      return L.divIcon({ className:'', html:svg, iconSize:[14,14], iconAnchor:[7,7] });
+    }
+
+    // ── Live AIS vessels ─────────────────────────────────────────
     CrudeRadar.tankers.forEach(function(t) {
-      var col = colorMap[t.status] || '#8899aa';
-      // Use circleMarker -- proven reliable at all zoom levels
-      var marker = L.circleMarker([t.lat, t.lng], {
-        radius:      t.status === 'underway' ? 5 : 4,
-        fillColor:   col,
-        color:       '#000',
-        weight:      1,
-        opacity:     0.9,
-        fillOpacity: 0.85,
-      });
+      var isLNG  = (t.shipType === 'lng');
+      var col    = isLNG ? LNG_COLOR : oilColor(t.status);
+      var staleNote = t.stale ? ' <span style="color:#556;font-size:9px">[CACHED]</span>' : '';
+      var typeLabel = isLNG ? 'LNG Carrier' : (t.type || 'Tanker');
       var tip =
-        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:180px;font-family:monospace">' +
-          '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">' + (t.name || 'UNKNOWN') + '</div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Type: <b style="color:#e0e8f0">' + t.flag + ' ' + t.type + '</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Route: <b style="color:#e0e8f0">' + (t.from||'--') + ' -> ' + (t.to||'--') + '</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Speed: <b style="color:#e0e8f0">' + t.speed + ' kn</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">Status: <b style="color:' + col + '">' + (t.status||'').toUpperCase() + '</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">ETA: <b style="color:#e0e8f0">' + (t.eta||'--') + '</b></div>' +
-          '<div style="color:#8899aa;font-size:10px;margin-top:3px">MMSI: ' + t.mmsi + '</div>' +
-        '</div>';
-      marker.bindTooltip(tip, { direction:'top', opacity:1, className:'crude-barrel-tooltip' });
-      group.addLayer(marker);
+        '<div style="background:#111520;border:1px solid ' + col + ';padding:10px 14px;min-width:190px;font-family:monospace">'
+        + '<div style="color:' + col + ';font-size:11px;letter-spacing:2px;margin-bottom:6px">'
+        +   (t.name||'UNKNOWN') + staleNote
+        + '</div>'
+        + '<div style="color:#8899aa;font-size:10px;margin-top:3px">Type: <b style="color:#e0e8f0">' + t.flag + ' ' + typeLabel + (t.vesselClass && t.vesselClass!==typeLabel?' / '+t.vesselClass:'') + '</b></div>'
+        + (t.from||t.to ? '<div style="color:#8899aa;font-size:10px;margin-top:3px">Route: <b style="color:#e0e8f0">' + (t.from||'--') + ' → ' + (t.to||t.destination||'--') + '</b></div>' : '')
+        + '<div style="color:#8899aa;font-size:10px;margin-top:3px">Speed: <b style="color:#e0e8f0">' + t.speed + ' kn</b></div>'
+        + '<div style="color:#8899aa;font-size:10px;margin-top:3px">Status: <b style="color:' + col + '">' + (t.status||'').toUpperCase() + '</b></div>'
+        + (t.eta && t.eta!=='--' ? '<div style="color:#8899aa;font-size:10px;margin-top:3px">ETA: <b style="color:#e0e8f0">' + t.eta + '</b></div>' : '')
+        + '<div style="color:#556;font-size:9px;margin-top:4px">MMSI: ' + t.mmsi + '</div>'
+        + '</div>';
+
+      if (isLNG) {
+        // Blue triangle for LNG
+        var m = L.marker([t.lat, t.lng], { icon: lngIcon(t.status), interactive: true, zIndexOffset: 10 });
+        m.bindTooltip(tip, { direction:'top', opacity:1, className:'crude-barrel-tooltip' });
+        group.addLayer(m);
+      } else {
+        // Green circle for oil tankers
+        var r = t.status === 'underway' ? 5 : 4;
+        var marker = L.circleMarker([t.lat, t.lng], {
+          radius:      r,
+          fillColor:   col,
+          color:       '#000',
+          weight:      1,
+          opacity:     0.9,
+          fillOpacity: 0.85,
+        });
+        marker.bindTooltip(tip, { direction:'top', opacity:1, className:'crude-barrel-tooltip' });
+        group.addLayer(marker);
+      }
     });
-    const lanes = [
-      [[26,50],[30,32],[33,27],[38,15],[36,5],[38,-9],[51.5,-0.1]],
-      [[26,50],[12,44],[-11,37],[-34,18],[51.5,-0.1]],
-      [[26,50],[5,73],[1.3,104],[22,114]],
-      [[29,-95],[35,-40],[38,-9],[51.5,-0.1]],
+
+    // ── Trade route lanes ─────────────────────────────────────────
+    var lanes = [
+      [[26,50],[30,32],[33,27],[38,15],[36,5],[38,-9],[51.5,-0.1]],          // ME → Europe (Suez)
+      [[26,50],[12,44],[-11,37],[-34,18],[51.5,-0.1]],                        // ME → Europe (Cape)
+      [[26,50],[5,73],[1.3,104],[22,114],[35,130]],                            // ME → Asia
+      [[26,50],[5,73],[1.3,104],[22,114],[35,130],[38,142],[35,155]],          // ME → Japan
+      [[29,-95],[35,-40],[38,-9],[51.5,-0.1]],                                 // Americas → Europe
     ];
-    lanes.forEach(coords => L.polyline(coords, { color:'#00b0ff', weight:1, opacity:0.2, dashArray:'6,8' }).addTo(group));
+    lanes.forEach(function(coords) {
+      L.polyline(coords, { color:'#00b0ff', weight:1, opacity:0.18, dashArray:'6,8' }).addTo(group);
+    });
     group.addTo(state.map);
     state.mapLayers.tankers = group;
   }

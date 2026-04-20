@@ -24,40 +24,17 @@ const MAX_TANKERS = 100;
 // ── TANKER AIS TYPE CODES ─────────────────────────────────────
 const TANKER_TYPES = new Set([80,81,82,83,84,85,86,87,88,89]);
 
-// ── STATIC ME/ASIA TANKER SEED ───────────────────────────────
-// Used when live AIS has no ME/Asia coverage (e.g. during Gulf
-// conflict when vessels disable AIS transponders, or AISstream
-// free tier coverage gaps). Flagged as stale: true.
-const STATIC_ME_TANKERS = [
-  // Persian Gulf
-  {mmsi:'403123001',name:'BAHRI YANBU',    flag:'SA',type:'VLCC',    lat:26.6, lng:56.3, speed:'0.0', course:0, status:'anchored', destination:'YANBU',     from:'RAS TANURA', to:'YANBU',     cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'403123002',name:'BAHRI JUBAIL',   flag:'SA',type:'VLCC',    lat:27.1, lng:56.8, speed:'0.0', course:0, status:'anchored', destination:'ROTTERDAM',  from:'JUBAIL',     to:'ROTTERDAM', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'408456001',name:'ADNOC UMRIQAH',  flag:'AE',type:'VLCC',    lat:25.3, lng:55.1, speed:'0.0', course:0, status:'moored',   destination:'RUWAIS',     from:'FUJAIRAH',   to:'RUWAIS',    cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'404789001',name:'AL BIDAA',        flag:'KW',type:'Suezmax', lat:29.1, lng:48.1, speed:'0.0', course:0, status:'anchored', destination:'ROTTERDAM',  from:'MINA AHMADI',to:'ROTTERDAM', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Suezmax',updatedAt:''},
-  {mmsi:'408789002',name:'AL DHAFRA',       flag:'AE',type:'Aframax', lat:24.5, lng:54.4, speed:'0.0', course:0, status:'moored',   destination:'SINGAPORE',  from:'JEBEL ALI',  to:'SINGAPORE', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Aframax',updatedAt:''},
-  {mmsi:'403456003',name:'SIRIUS STAR',     flag:'SA',type:'ULCC',    lat:26.2, lng:57.1, speed:'0.0', course:0, status:'anchored', destination:'WAITING',    from:'RAS TANURA', to:'--',        cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'ULCC',   updatedAt:''},
-  {mmsi:'436001001',name:'AL SHUWAIMIYAH', flag:'BH', type:'VLCC',   lat:26.0, lng:50.6, speed:'0.0', course:0, status:'moored',   destination:'ROTTERDAM',  from:'SITRA',      to:'ROTTERDAM', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'419001001',name:'MAHARASHTRA',     flag:'IN',type:'Suezmax', lat:22.5, lng:59.8, speed:'9.2', course:225,status:'underway',destination:'MUMBAI',     from:'HORMUZ',     to:'MUMBAI',    cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Suezmax',updatedAt:''},
-  // Arabian Sea
-  {mmsi:'403456004',name:'SAUDI VISION',   flag:'SA',type:'VLCC',    lat:22.1, lng:62.3, speed:'14.5',course:270,status:'underway',destination:'ROTTERDAM',  from:'RAS TANURA', to:'ROTTERDAM', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'419002001',name:'JNPT STAR',       flag:'IN',type:'Aframax', lat:18.7, lng:66.4, speed:'12.1',course:90, status:'underway',destination:'MUMBAI',     from:'MUSCAT',     to:'MUMBAI',    cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Aframax',updatedAt:''},
-  // Red Sea
-  {mmsi:'636001001',name:'GLORY TRADER',   flag:'LR',type:'Suezmax', lat:15.2, lng:42.8, speed:'13.8',course:315,status:'underway',destination:'ROTTERDAM',  from:'JEDDAH',     to:'ROTTERDAM', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Suezmax',updatedAt:''},
-  {mmsi:'636001002',name:'CAPE PIONEER',   flag:'LR',type:'VLCC',    lat:12.6, lng:43.5, speed:'11.2',course:180,status:'underway',destination:'REROUTING',  from:'RAS TANURA', to:'--',        cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  // Indian Ocean
-  {mmsi:'538001001',name:'MARSHAL ISLAND', flag:'MH',type:'VLCC',    lat:5.8,  lng:74.2, speed:'15.2',course:90, status:'underway',destination:'SINGAPORE',  from:'MUSCAT',     to:'SINGAPORE', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'563001001',name:'MARINA BAY',      flag:'SG',type:'Suezmax', lat:2.1,  lng:96.5, speed:'13.7',course:90, status:'underway',destination:'SINGAPORE',  from:'OMAN',       to:'SINGAPORE', cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Suezmax',updatedAt:''},
-  // Malacca / Singapore
-  {mmsi:'563002001',name:'SINGAPORE SPIRIT',flag:'SG',type:'Aframax', lat:3.5,  lng:103.8,speed:'12.8',course:45, status:'underway',destination:'BUSAN',      from:'SINGAPORE',  to:'BUSAN',     cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Aframax',updatedAt:''},
-  {mmsi:'525001001',name:'INDO MASTER',     flag:'ID',type:'Aframax', lat:1.2,  lng:104.5,speed:'11.5',course:180,status:'underway',destination:'JAKARTA',    from:'SINGAPORE',  to:'JAKARTA',   cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Aframax',updatedAt:''},
-  // South China Sea
-  {mmsi:'477001001',name:'HK FORTUNE',      flag:'HK',type:'VLCC',    lat:10.5, lng:112.3,speed:'14.1',course:45, status:'underway',destination:'NINGBO',     from:'SINGAPORE',  to:'NINGBO',    cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'477001002',name:'HK VIRTUE',       flag:'HK',type:'VLCC',    lat:15.8, lng:115.6,speed:'13.9',course:45, status:'underway',destination:'QINGDAO',    from:'OMAN',       to:'QINGDAO',   cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'477001003',name:'HK EXCELLENCE',   flag:'HK',type:'Suezmax', lat:8.3,  lng:109.2,speed:'12.3',course:45, status:'underway',destination:'ZHOUSHAN',   from:'SINGAPORE',  to:'ZHOUSHAN',  cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'Suezmax',updatedAt:''},
-  // East Asia
-  {mmsi:'431001001',name:'NISSHO MARU',     flag:'JP',type:'VLCC',    lat:31.2, lng:124.5,speed:'15.8',course:45, status:'underway',destination:'TOKYO',      from:'SINGAPORE',  to:'TOKYO',     cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-  {mmsi:'440001001',name:'KOREA STAR',      flag:'KR',type:'VLCC',    lat:33.5, lng:126.8,speed:'14.2',course:45, status:'underway',destination:'ULSAN',      from:'KUWAIT',     to:'ULSAN',     cargo:'Crude Oil',eta:'--',imo:'--',vesselClass:'VLCC',   updatedAt:''},
-];
+// ── LNG SHIP DETECTION ──────────────────────────────────────
+// Type 84 = "Tanker, hazardous category D" in IEC/AIS spec → LNG carriers
+// Also catch by vessel name pattern for type-0 (type not yet received)
+const LNG_TYPE   = 84;
+const LNG_NAMES  = /\b(LNG|METHANE|GAS(?!OIL)|GIMI|GRACE|ARCTIC|CELSIUS|GOLAR|Q-FLEX|Q-MAX|ARCTIC|FLEX)\b/i;
+function isLNG(typeCode, name) {
+  if (typeCode === LNG_TYPE) return true;
+  if (LNG_NAMES.test(name||''))   return true;
+  return false;
+}
+
 
 function isMEAsia(lat, lng) {
   // Persian Gulf / Arabian Sea / Indian Ocean / SE Asia / East Asia
@@ -74,17 +51,24 @@ const NAV_STATUS = {
 };
 
 // ── BOUNDING BOXES ────────────────────────────────────────────
-// Pass 1: Middle East + Asia -- highest priority for oil tankers
+// Pass 1: Middle East + Asia + Pacific
 const BOXES_ME_ASIA = [
+  // ── Middle East ──────────────────────────────────────────────
   [[21.0, 48.0], [30.0, 60.0]],    // Persian Gulf + Strait of Hormuz
-  [[22.0, 55.0], [26.0, 61.0]],    // Strait of Hormuz chokepoint
+  [[22.0, 55.0], [26.0, 61.0]],    // Strait of Hormuz chokepoint (dense traffic)
   [[10.0, 40.0], [25.0, 60.0]],    // Red Sea + Gulf of Aden + Gulf of Oman
   [[10.0, 55.0], [25.0, 75.0]],    // Arabian Sea
-  [[-5.0, 68.0], [15.0, 90.0]],    // Indian Ocean
-  [[-6.0, 95.0], [10.0, 116.0]],   // Strait of Malacca
-  [[ 0.0, 103.0],[ 5.0, 115.0]],   // Singapore Strait
-  [[ 5.0, 105.0],[22.0, 122.0]],   // South China Sea
-  [[20.0, 118.0],[42.0, 132.0]],   // East China Sea + Korea + Japan
+  // ── Indian Ocean + SE Asia ────────────────────────────────────
+  [[-5.0,  68.0], [15.0,  90.0]],  // Indian Ocean
+  [[-6.0,  95.0], [10.0, 116.0]],  // Strait of Malacca
+  [[ 0.0, 103.0], [ 5.0, 115.0]],  // Singapore Strait
+  [[ 5.0, 105.0], [22.0, 122.0]],  // South China Sea
+  [[20.0, 118.0], [42.0, 132.0]],  // East China Sea + Korea + Japan
+  // ── Pacific ───────────────────────────────────────────────────
+  [[ 5.0, 122.0], [25.0, 145.0]],  // Philippine Sea + Guam corridor
+  [[25.0, 128.0], [45.0, 160.0]],  // Western Pacific (Japan–Hawaii route)
+  [[-10.0,130.0], [10.0, 165.0]],  // Coral Sea + Torres Strait
+  [[-40.0,110.0], [0.0,  135.0]],  // Australia (Indian Ocean side + Bass Strait)
 ];
 
 // Pass 2: Europe + Americas
@@ -286,10 +270,15 @@ export default async function handler(req) {
   const msgs2 = await collectVessels(BOXES_EUROPE_AMERICAS, PASS_MS, vessels);
   console.log('[AIS] Pass 2 done. msgs=' + msgs2 + ' vessels=' + vessels.size);
 
-  // Post-process
+  // Post-process: classify vessel type and filter
   const tankers = Array.from(vessels.values())
     .filter(v => v.lat !== 0 || v.lng !== 0)
     .filter(v => !v.typeCode || TANKER_TYPES.has(v.typeCode))
+    .map(v => ({
+      ...v,
+      shipType: isLNG(v.typeCode, v.name) ? 'lng' : 'oil',
+      cargo:    isLNG(v.typeCode, v.name) ? 'LNG'       : (v.cargo||'Crude Oil'),
+    }))
     .sort((a,b) => parseFloat(b.speed)-parseFloat(a.speed))
     .slice(0, MAX_TANKERS);
 
@@ -298,23 +287,10 @@ export default async function handler(req) {
     console.log('  ' + t.name + ' (' + t.flag + ') @ ' + t.lat.toFixed(2) + ',' + t.lng.toFixed(2) + ' ' + t.speed + 'kn -> ' + (t.destination||'--'));
   });
 
-  // Count live ME/Asia vessels
+  // Count live ME/Asia vessels (diagnostic only)
   const liveMe = tankers.filter(t => isMEAsia(t.lat, t.lng)).length;
   console.log('[AIS] Live ME/Asia vessels: ' + liveMe);
-
-  // If fewer than 3 live ME/Asia vessels, inject static seed for those regions
-  // This handles the Gulf conflict situation where vessels disable AIS transponders
-  const seenMMSI = new Set(tankers.map(t => t.mmsi));
-  if (liveMe < 3) {
-    const ts = new Date().toISOString();
-    console.log('[AIS] Insufficient live ME data -- injecting ' + STATIC_ME_TANKERS.length + ' static seed tankers');
-    STATIC_ME_TANKERS.forEach(t => {
-      if (!seenMMSI.has(t.mmsi)) {
-        tankers.push(Object.assign({}, t, { stale: true, updatedAt: ts }));
-        seenMMSI.add(t.mmsi);
-      }
-    });
-  }
+  console.log('[AIS] Live LNG vessels: ' + tankers.filter(t => t.shipType==='lng').length);
 
   // Merge with previous if too few results
   let finalTankers = tankers;

@@ -320,10 +320,13 @@
 
           <!-- Tanker legend -->
           <div style="position:absolute;bottom:20px;right:20px;z-index:1000;background:rgba(10,12,15,0.9);border:1px solid var(--border);border-radius:3px;padding:8px 12px;font-family:var(--font-mono);font-size:10px;">
-            <div style="color:var(--accent-orange);letter-spacing:1px;margin-bottom:6px;font-size:9px;text-transform:uppercase">ACTIVE TANKERS</div>
-            <div class="map-legend-item"><div class="map-legend-dot" style="background:#00e676;box-shadow:0 0 5px #00e67680"></div>Underway</div>
-            <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>Anchored</div>
-            <div class="map-legend-item"><div class="map-legend-dot" style="background:#00b0ff"></div>Moored</div>
+            <div style="color:var(--accent-orange);letter-spacing:1px;margin-bottom:6px;font-size:9px;text-transform:uppercase">VESSEL TYPES</div>
+            <div class="map-legend-item"><div class="map-legend-dot" style="background:#00e676;box-shadow:0 0 5px #00e67680"></div>Oil Tanker · Underway</div>
+            <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffb300"></div>Oil Tanker · Anchored</div>
+            <div class="map-legend-item" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <svg width="12" height="12" viewBox="-6 -6 12 12"><polygon points="0,-5 4.5,4 -4.5,4" fill="#2979ff" stroke="#1565c0" stroke-width="1.2"/></svg>
+              <span>LNG Carrier</span>
+            </div>
           </div>
         </div>
       </div>
