@@ -273,7 +273,8 @@ export default async function handler(req) {
   // Non-tanker name & company patterns
   // Includes: container companies (MSC, MAERSK, CMA, COSCO, HAPAG, EVERGREEN),
   //           ferry/cruise operators, offshore, tugs, ro-ro, patrol, pilot
-  const NON_TANKER_NAME = /\b(FERRY|FERJA|JET\b|CRUISE|SEAWAYS|SEALINK|RO.?RO|GRANDE|VIKING|PRINCESS|PILOTS?|PATROL|RESCUE|LIFEBOAT|TRAWLER|HIGHSPEED|COASTGUARD|SUPPLY|AHTS|DRILLSHIP|CABLE|SURVEY|EXCURSION|SEACAT|HOVERCRAFT|CONTAINER)\b|^(MSC |MAERSK |CMA |COSCO |HAPAG|EVERGREEN|AIR |CATAMARAN)/i;
+  // Non-tanker name blocklist — applied to ALL vessels (some misreport AIS type 80-89)
+  const NON_TANKER_NAME = /\b(FERRY|FERJA|JET\b|CRUISE|SEAWAYS|SEALINK|RO.?RO|GRANDE|VIKING|PRINCESS|PILOTS?|PATROL|RESCUE|LIFEBOAT|TRAWLER|HIGHSPEED|COASTGUARD|SUPPLY|AHTS|DRILLSHIP|CABLE|SURVEY|EXCURSION|SEACAT|HOVERCRAFT|CONTAINER|HIGHWAY|FEEDER)\b|^(MSC |MAERSK |CMA |COSCO |HAPAG|EVERGREEN|AIR |CATAMARAN|CSCL |ZIM |X-PRESS |NORMAND |SIEM |SEVEN SEAS )/i;
 
   // Post-process: classify vessel type and filter
   const tankers = Array.from(vessels.values())
@@ -282,10 +283,13 @@ export default async function handler(req) {
     // Unknown-type: speed ≤ 17 kn (laden VLCC max ~15 kn, Aframax ballast ~17 kn)
     //               AND name doesn't match non-tanker patterns
     .filter(v => {
-      if (TANKER_TYPES.has(v.typeCode)) return true;
-      const spd = parseFloat(v.speed) || 0;
-      if (spd > 17) return false;               // container ships / ferries / passenger
+      // Name blocklist always applies — even type-confirmed vessels can misreport AIS type
       if (NON_TANKER_NAME.test(v.name)) return false;
+      // Type-confirmed tankers (80-89) pass without speed check
+      if (TANKER_TYPES.has(v.typeCode)) return true;
+      // Unknown type: must be ≤ 17 kn (container ships / fast ferries are faster)
+      const spd = parseFloat(v.speed) || 0;
+      if (spd > 17) return false;
       return true;
     })
     .map(v => ({
