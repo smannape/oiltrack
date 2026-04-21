@@ -405,6 +405,7 @@
       c.price          = parseFloat(data.price.toFixed(2));
       c._liveChange    = data.change    ?? null;
       c._liveChangePct = data.changePct ?? null;
+      c._history       = data.history   || [];
       updated++;
     }
 
@@ -656,6 +657,43 @@
   // ============================================================
   // PRICE GRID
   // ============================================================
+  // ── Sparkline SVG builder (⁠no library, pure inline SVG) ⁠──────────
+  // history: [{period, value}] sorted oldest→newest (up to 60 daily closes)
+  // Returns a self-contained SVG string; empty string if data insufficient.
+  function buildSparklineSVG(contractId, history, direction) {
+    if (!history || history.length < 3) return '';
+    var vals = history.slice(-30).map(function(h) { return h.value; }).filter(function(v) { return v > 0; });
+    if (vals.length < 2) return '';
+
+    var W = 200, H = 38, pad = 3;
+    var min = Math.min.apply(null, vals);
+    var max = Math.max.apply(null, vals);
+    var range = max - min || 0.001;
+
+    var color = direction === 'up' ? '#00e676' : direction === 'down' ? '#ff1744' : '#555';
+    var gid   = 'spk-' + contractId;
+
+    var pts = vals.map(function(v, i) {
+      var x = ((i / (vals.length - 1)) * W).toFixed(1);
+      var y = (H - pad - ((v - min) / range) * (H - pad * 2)).toFixed(1);
+      return x + ',' + y;
+    });
+
+    var linePts = pts.join(' ');
+    var areaPts = '0,' + H + ' ' + linePts + ' ' + W + ',' + H;
+
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" ' +
+      'xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:' + H + 'px">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.28"/>' +
+      '<stop offset="100%" stop-color="' + color + '" stop-opacity="0"/>' +
+      '</linearGradient></defs>' +
+      '<polygon points="' + areaPts + '" fill="url(#' + gid + ')"/>' +
+      '<polyline points="' + linePts + '" fill="none" stroke="' + color + '" ' +
+      'stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '</svg>';
+  }
+
   function renderPriceGrid() {
     const grid = document.getElementById('price-grid');
     if (!grid) return;
@@ -677,12 +715,14 @@
       const chgStr = c.price <= 0 ? 'Loading...'
         : !hasChangeData ? '--'
         : `${arrow} ${Math.abs(chg).toFixed(2)} (${pct}%)`;
+      const spark = buildSparklineSVG(c.id, c._history || [], dir);
       return `<div class="price-card ${dir}" id="pc-${c.id}">
         <div class="label">${c.flag} ${c.label}</div>
         <div class="name">${c.name}</div>
         <div class="price">${priceStr}</div>
         <div class="change">${chgStr}</div>
         <div class="exchange">${c.exchange} . ${c.unit}</div>
+        ${spark ? '<div class="sparkline-wrap">' + spark + '</div>' : ''}
       </div>`;
     }).join('');
   }
