@@ -115,21 +115,22 @@ export default async function handler(req, context) {
       );
     }
 
-    // ── Netlify Pro Fine-Grained Caching ─────────────────────
-    // Prices: short TTL — blob refreshes every 15 min, CDN must
-    //   stay close to that.  max-age=60 + swr=120 = max 3 min stale.
-    // Other blobs (EIA/news/meta): hourly refresh, longer TTL OK.
+    // ── Cache control per blob type ──────────────────────────────
+    // Prices: NO CDN caching at all.  Blob refreshes every 15 min;
+    //   the blob read itself is ~50 ms so CDN adds no value and
+    //   only causes stale data to be served.
+    // Other blobs (EIA / news / meta): updated hourly, CDN OK.
     const isPrices = blobKey === 'prices';
     const cdnControl = isPrices
-      ? 'public, max-age=60, stale-while-revalidate=120'          // prices: max 3 min stale
+      ? 'no-store'                                                  // prices: always hit function
       : 'public, max-age=300, stale-while-revalidate=3300, durable'; // others: 1 h TTL
 
     return jsonResponse(
       { status: 'ok', cacheAgeSeconds, ...data },
       200,
       {
-        'Cache-Control': 'no-store',   // browser must not cache
-        'Netlify-CDN-Cache-Control': cdnControl,
+        'Cache-Control': 'no-store',              // browser must not cache
+        'Netlify-CDN-Cache-Control': cdnControl,  // CDN must not cache prices
         'Cache-Tag': `oil-data,oil-${blobKey}`,
       }
     );
