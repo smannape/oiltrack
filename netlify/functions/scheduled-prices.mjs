@@ -23,6 +23,9 @@ export default async function handler(req) {
   console.log('[scheduled-prices] Triggering quick price refresh at ' + new Date().toISOString());
 
   try {
+    // fetch-oil-data-background is a Netlify Background Function—it always
+    // returns 202 immediately and runs the handler asynchronously.
+    // Fire-and-forget is intentional; we just confirm the 202 was received.
     const res = await fetch(siteUrl + '/.netlify/functions/fetch-oil-data-background', {
       method: 'POST',
       headers: {
@@ -31,9 +34,8 @@ export default async function handler(req) {
       },
       body: JSON.stringify({ mode: 'quick' }),
     });
-    const data = await res.json().catch(() => ({}));
-    console.log('[scheduled-prices] Result:', data.ok ? 'OK' : 'FAILED', data.contracts || '');
-    return new Response(JSON.stringify({ triggered: true, result: data }), {
+    console.log('[scheduled-prices] Background function accepted, status:', res.status);
+    return new Response(JSON.stringify({ triggered: true, status: res.status }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
