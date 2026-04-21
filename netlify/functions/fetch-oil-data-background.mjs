@@ -123,8 +123,10 @@ async function fetchJSON(url, timeoutMs = 30000, headers = {}, retries = 3) {
         return null;
       }
       if (res.status === 429) {
-        console.warn(`[fetchJSON] 429 rate limited (no retry): ${url.slice(0, 90)}`);
-        return null;
+        console.warn(`[fetchJSON] 429 rate limited (attempt ${attempt}/${retries}): ${url.slice(0, 90)}`);
+        // Retry 429 — Yahoo Finance rate limits are transient; wait longer before next attempt
+        if (attempt < retries) await new Promise(r => setTimeout(r, 6000 * attempt));
+        continue;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
@@ -159,8 +161,8 @@ async function fetchText(url, timeoutMs = 15000) {
 // Returns price + 60-day daily history + day-over-day change.
 // ==============================================================
 
-async function fetchYFinanceTicker(contract) {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(contract.ticker)}?interval=1d&range=60d`;
+async function fetchYFinanceTicker(contract, range = '60d') {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(contract.ticker)}?interval=1d&range=${range}`;
   const raw = await fetchJSON(url, 15000, YF_HEADERS, 3);
 
   if (!raw?.chart?.result?.[0]) {
@@ -209,16 +211,63 @@ async function fetchYFinanceTicker(contract) {
   };
 }
 
-async function fetchAllYFinancePrices() {
-  const results = await Promise.allSettled(
-    YFINANCE_CONTRACTS.map(c => fetchYFinanceTicker(c))
-  );
+// BZ=F (ICE Brent) can be rate-limited or slow on query2 from Netlify IPs.
+// Try query1 first, then query2.  Sanity-check: Brent must be $30-$200.
+async function fetchBrentRobust(range = '60d') {
+  const contract = YFINANCE_CONTRACTS.find(c => c.ticker === 'BZ=F');
+  const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
+
+  for (const host of hosts) {
+    const url = `https://${host}/v8/finance/chart/BZ%3DF?interval=1d&range=${range}`;
+    const raw = await fetchJSON(url, 22000, YF_HEADERS, 2);
+    if (!raw?.chart?.result?.[0]) { console.warn(`[prices] Brent: no data from ${host}`); continue; }
+
+    const result = raw.chart.result[0];
+    const price  = result.meta?.regularMarketPrice;
+    if (!price || isNaN(price) || price < 30 || price > 200) {
+      console.warn(`[prices] Brent: sanity-check failed on ${host}: ${price}`);
+      continue;
+    }
+
+    const timestamps = result.timestamp || [];
+    const closes     = result.indicators?.quote?.[0]?.close || [];
+    const history    = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (closes[i] != null) {
+        history.push({ period: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), value: parseFloat(closes[i].toFixed(4)) });
+      }
+    }
+    let change = null, changePct = null;
+    if (history.length >= 2) {
+      const curr = history[history.length - 1].value, prev = history[history.length - 2].value;
+      change    = parseFloat((curr - prev).toFixed(4));
+      changePct = parseFloat(((curr - prev) / prev * 100).toFixed(2));
+    }
+    const latestTs = history.length > 0 ? history[history.length - 1].period : new Date().toISOString().slice(0, 10);
+    console.log(`[prices] Brent via ${host}: $${price}`);
+    return {
+      id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'ICE', flag: '🇬🇧',
+      source: 'Yahoo Finance',
+      latest: { price, timestamp: latestTs, change, changePct },
+      change, changePct, history,
+    };
+  }
+  console.warn('[prices] BZ=F failed on both query1 and query2');
+  return null;
+}
+
+async function fetchAllYFinancePrices(range = '60d') {
+  const nonBrent = YFINANCE_CONTRACTS.filter(c => c.ticker !== 'BZ=F');
+  const [brentResult, ...otherResults] = await Promise.allSettled([
+    fetchBrentRobust(range),
+    ...nonBrent.map(c => fetchYFinanceTicker(c, range)),
+  ]);
 
   const prices = {};
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value) {
-      prices[r.value.id] = r.value;
-    }
+  if (brentResult.status === 'fulfilled' && brentResult.value) prices['brent'] = brentResult.value;
+  for (let i = 0; i < otherResults.length; i++) {
+    const r = otherResults[i];
+    if (r.status === 'fulfilled' && r.value) prices[r.value.id] = r.value;
   }
 
   const found = Object.keys(prices);
@@ -504,19 +553,63 @@ export default async function handler(req, context) {
   if (body.mode === 'quick') {
     console.log(`[quick-prices] ===== START ${fetchedAt} =====`);
     const store = getStore('crude-radar');
-    // Fetch fresh Yahoo Finance prices
-    const yfBatch = await fetchAllYFinancePrices();
-    if (!yfBatch) {
-      console.warn('[quick-prices] Yahoo Finance returned nothing -- skipping write');
+
+    // Read existing blob first — needed for history preservation and Brent fallback
+    const existingBlob = await store.get('prices', { type: 'json' }).catch(() => null);
+    const existingPrices = existingBlob?.prices || {};
+
+    // Use range=5d: much smaller payload (~10x) = faster from Netlify, fewer timeouts
+    const yfBatch = await fetchAllYFinancePrices('5d');
+
+    if (!yfBatch && !Object.keys(existingPrices).length) {
+      console.warn('[quick-prices] Yahoo Finance returned nothing and no cache -- skipping write');
       return new Response(JSON.stringify({ quick: true, ok: false, fetchedAt }), { status: 200 });
     }
-    // Preserve existing derived prices; overwrite live ones
-    const existingBlob = await store.get('prices', { type: 'json' }).catch(() => null);
-    const prices = { ...(existingBlob?.prices || {}), ...yfBatch };
+
+    const yfData = yfBatch || {};
+
+    // Merge: update live prices but preserve the full 60d history from the existing blob
+    // (5d fetch only returns 5 candles; we don't want to truncate chart history)
+    const prices = { ...existingPrices };
+    for (const [id, newData] of Object.entries(yfData)) {
+      const existHist = existingPrices[id]?.history;
+      prices[id] = {
+        ...newData,
+        history: (existHist && existHist.length > newData.history.length)
+          ? existHist
+          : newData.history,
+      };
+    }
+
+    // Brent fallback: if BZ=F failed on both hosts, derive from WTI + typical spread
+    if (!prices.brent?.latest?.price && prices.wti?.latest?.price) {
+      const spread    = 3.50;
+      const brentPrice = parseFloat((prices.wti.latest.price + spread).toFixed(2));
+      const prevBrent  = existingPrices.brent?.latest?.price || null;
+      console.warn(`[quick-prices] BZ=F unavailable — deriving Brent from WTI+$${spread}: $${brentPrice}`);
+      prices.brent = {
+        ...(existingPrices.brent || {}),
+        id: 'brent', name: 'Brent Crude', unit: 'USD/bbl', exchange: 'ICE', flag: '🇬🇧',
+        source: 'Derived (WTI+$3.50)',
+        latest: {
+          price: brentPrice,
+          timestamp: new Date().toISOString().slice(0, 10),
+          change:    prevBrent ? parseFloat((brentPrice - prevBrent).toFixed(2)) : null,
+          changePct: prevBrent ? parseFloat(((brentPrice - prevBrent) / prevBrent * 100).toFixed(2)) : null,
+        },
+        change:    prevBrent ? parseFloat((brentPrice - prevBrent).toFixed(2)) : null,
+        changePct: prevBrent ? parseFloat(((brentPrice - prevBrent) / prevBrent * 100).toFixed(2)) : null,
+        derivedFrom: 'WTI+$3.50 (BZ=F unavailable)',
+        history: existingPrices.brent?.history ||
+          (prices.wti?.history || []).map(h => ({ period: h.period, value: parseFloat((h.value + spread).toFixed(2)) })),
+      };
+    }
+
     buildDerivedPrices(prices);
     await store.setJSON('prices', { fetchedAt, prices });
-    const contracts = Object.keys(yfBatch).join(', ');
-    console.log(`[quick-prices] ===== DONE in ${Date.now() - startTime}ms — ${contracts} =====`);
+    const contracts = Object.keys(yfData).join(', ') || '(none from YF)';
+    const hasDerivedBrent = !yfData.brent && prices.brent;
+    console.log(`[quick-prices] ===== DONE in ${Date.now() - startTime}ms — ${contracts}${hasDerivedBrent ? ' + brent(derived)' : ''} =====`);
     return new Response(JSON.stringify({ quick: true, ok: true, fetchedAt, contracts }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
