@@ -493,6 +493,36 @@ function dedupeNews(articles) {
 export default async function handler(req, context) {
   const startTime = Date.now();
   const fetchedAt = new Date().toISOString();
+
+  // ── QUICK MODE: prices-only refresh (called every 15 min) ──
+  // When body contains { mode: 'quick' }, skip EIA / news / tankers
+  // and just update the prices blob.  Fast (~2-3 s vs ~12 s full).
+  const body = (req.method === 'POST')
+    ? await req.json().catch(() => ({}))
+    : {};
+
+  if (body.mode === 'quick') {
+    console.log(`[quick-prices] ===== START ${fetchedAt} =====`);
+    const store = getStore('crude-radar');
+    // Fetch fresh Yahoo Finance prices
+    const yfBatch = await fetchAllYFinancePrices();
+    if (!yfBatch) {
+      console.warn('[quick-prices] Yahoo Finance returned nothing -- skipping write');
+      return new Response(JSON.stringify({ quick: true, ok: false, fetchedAt }), { status: 200 });
+    }
+    // Preserve existing derived prices; overwrite live ones
+    const existingBlob = await store.get('prices', { type: 'json' }).catch(() => null);
+    const prices = { ...(existingBlob?.prices || {}), ...yfBatch };
+    buildDerivedPrices(prices);
+    await store.setJSON('prices', { fetchedAt, prices });
+    const contracts = Object.keys(yfBatch).join(', ');
+    console.log(`[quick-prices] ===== DONE in ${Date.now() - startTime}ms — ${contracts} =====`);
+    return new Response(JSON.stringify({ quick: true, ok: true, fetchedAt, contracts }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   console.log(`[background] ===== START ${fetchedAt} =====`);
 
   const store  = getStore('crude-radar');
